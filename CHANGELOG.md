@@ -5,7 +5,11 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2025-06-07
+## [0.2.1] - 2025-06-07
+
+### Fixed in 0.2.1
+
+- Corrected changelog URL in About dialog to point to the correct GitHub repository
 
 ### Added in 0.2.0
 
