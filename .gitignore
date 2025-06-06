@@ -1,0 +1,105 @@
+# === Git ===
+.git/
+
+# === Qt4 Project Build Artifacts ===
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.so
+*.dll
+*.dylib
+*.qrc.generated.cpp
+*.moc
+*.moc.cpp
+*.user
+*.pro.user
+Makefile*
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+build-*/
+
+# === Python ===
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+.eggs/
+*.log
+
+# === CMake ===
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+build/
+install/
+compile_commands.json
+
+# === Config / Environment ===
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.cfg
+*.conf
+~/.config/desecqt/
+
+# === Virtual Environments ===
+.venv/
+venv/
+env/
+ENV/
+
+# === Operating System ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === IDEs and Editors ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Logs ===
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# === Cache ===
+.cache/
+__pycache__/
+*.tsbuildinfo
+
+# === Distribution / Packaging ===
+dist/
+build/
+*.spec
+
+# === Local Artifacts ===
+*.bak
+*.tmp
+*.old
+
+# === Ignore personal overrides, if any ===
+*.user
+
+# === Optional Project-Specific ===
+# Uncomment if using docker or packaging tools
+# Dockerfile
+# *.AppImage
+# *.deb
+# *.rpm
+
+# === Windsurf ===
+.windsurf/
+
