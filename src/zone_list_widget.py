@@ -7,6 +7,7 @@ Displays and manages DNS zones with optimized performance.
 """
 
 import logging
+import webbrowser
 from typing import List, Dict, Any, Tuple, Optional, Callable, Union
 
 from PyQt6 import QtWidgets, QtCore, QtGui
@@ -217,6 +218,13 @@ class ZoneListWidget(QtWidgets.QWidget):
         self.delete_zone_btn.clicked.connect(self.delete_selected_zone)
         actions_layout.addWidget(self.delete_zone_btn)
         
+        # Add DNSSEC validation button
+        self.validate_dnssec_btn = QtWidgets.QPushButton("Validate DNSSEC")
+        self.validate_dnssec_btn.clicked.connect(self.validate_dnssec)
+        self.validate_dnssec_btn.setEnabled(False)  # Disabled by default until a zone is selected
+        self.validate_dnssec_btn.setToolTip("Validate DNSSEC configuration for the selected domain")
+        actions_layout.addWidget(self.validate_dnssec_btn)
+        
         # Add spacer to push buttons to the left (same as record widget)
         actions_layout.addStretch()
         
@@ -313,46 +321,61 @@ class ZoneListWidget(QtWidgets.QWidget):
             else:
                 self.zone_count_label.setText(f"Total zones: {total}")
     
-    def on_zone_selection_changed(self, index: Optional[QtCore.QModelIndex] = None) -> None:
-        """Handle zone selection change with optimized performance.
+    def on_zone_selection_changed(self, current: QtCore.QModelIndex, previous: QtCore.QModelIndex) -> None:
+        """Handler for zone selection changed event.
         
         Args:
-            index: The model index that was selected
+            current: Currently selected index
+            previous: Previously selected index
         """
-        # Get selection if not provided
-        if index is None:
-            indices = self.zone_list_view.selectedIndexes()
-            if not indices:
-                return
-            index = indices[0]
-            
-        if not index.isValid():
+        if not current.isValid():
             return
+            
+        # Get the zone name from the model
+        zone_name = self.zone_model.data(current, Qt.ItemDataRole.DisplayRole)
         
-        # Get zone data from model - this is now optimized with our caching improvements
-        zone = self.zone_model.data(index, Qt.ItemDataRole.UserRole)
-        zone_name = zone.get('name', '')
+        # Log zone selection
+        logger.debug(f"Zone selected: {zone_name}")
+        
+        # Update button states based on selection
+        has_selection = True  # We know we have a valid selection at this point
+        self.delete_zone_btn.setEnabled(has_selection)
+        self.validate_dnssec_btn.setEnabled(has_selection)
         
         # Emit signal with selected zone name
         self.zone_selected.emit(zone_name)
     
-    def get_selected_zone(self):
-        """
-        Get the currently selected zone.
-        
-        Returns:
-            tuple: (zone_name, zone_data) or (None, None) if no zone is selected
-        """
+    def get_selected_zone(self) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """Get the currently selected zone name and data."""
         indices = self.zone_list_view.selectedIndexes()
         
         if not indices or not indices[0].isValid():
             return None, None
             
+        # Get zone data from the user role
         index = indices[0]
         zone_data = self.zone_model.data(index, Qt.ItemDataRole.UserRole)
         zone_name = zone_data.get('name', '')
         
         return zone_name, zone_data
+        
+    def validate_dnssec(self) -> None:
+        """Open DNSSEC validation tool in browser for the selected domain."""
+        zone_name, _ = self.get_selected_zone()
+        if not zone_name:
+            return
+        
+        try:
+            # Construct the URL for the DNSSEC validator
+            validation_url = f"https://dnssec-debugger.verisignlabs.com/{zone_name}"
+            
+            # Open the URL in the default web browser
+            webbrowser.open(validation_url)
+            
+            self.log_message.emit(f"Opening DNSSEC validation for {zone_name}...", "info")
+        except Exception as e:
+            self.log_message.emit(f"Failed to open DNSSEC validation: {str(e)}", "error")
+            logger.error(f"Failed to open DNSSEC validation: {e}")
     
     def show_add_zone_dialog(self):
         """Show dialog to add a new zone."""
@@ -445,12 +468,10 @@ class ZoneListWidget(QtWidgets.QWidget):
         if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
             self.delete_zone(zone_name)
     
-    def set_edit_enabled(self, enabled):
-        """Enable or disable zone editing controls based on online mode.
+    def set_edit_enabled(self, enabled: bool) -> None:
+        """Enable or disable edit functionality."""
+        has_selection = len(self.zone_list_view.selectedIndexes()) > 0
         
-        Args:
-            enabled (bool): Whether editing is enabled
-        """
         # Enable/disable add zone button
         if hasattr(self, 'add_zone_btn'):
             self.add_zone_btn.setEnabled(enabled)
@@ -458,16 +479,21 @@ class ZoneListWidget(QtWidgets.QWidget):
             if not enabled:
                 self.add_zone_btn.setToolTip("Adding zones is disabled in offline mode")
             else:
-                self.add_zone_btn.setToolTip("Add a new DNS zone")
+                self.add_zone_btn.setToolTip("")
         
         # Enable/disable delete zone button
         if hasattr(self, 'delete_zone_btn'):
-            self.delete_zone_btn.setEnabled(enabled)
+            self.delete_zone_btn.setEnabled(enabled and has_selection)
             # Update the tooltip to explain why it's disabled
             if not enabled:
                 self.delete_zone_btn.setToolTip("Deleting zones is disabled in offline mode")
             else:
-                self.delete_zone_btn.setToolTip("Delete the selected zone")
+                self.delete_zone_btn.setToolTip("")
+                
+        # Enable/disable DNSSEC validation button - always available when zone selected
+        # regardless of online/offline status since it uses external browser
+        if hasattr(self, 'validate_dnssec_btn'):
+            self.validate_dnssec_btn.setEnabled(has_selection)
                 
     def delete_zone(self, zone_name):
         """Delete a zone.
