@@ -20,7 +20,7 @@ Below is a list of all currently implemented configuration options:
 |--------|------|---------|-------------|
 | `api_url` | String | `https://desec.io/api/v1` | The URL of the deSEC API endpoint |
 | `auth_token` | String | (empty) | Your deSEC API authentication token |
-| `sync_interval_minutes` | Integer | `5` | How often to sync with the deSEC API (in minutes) |
+| `sync_interval_minutes` | Integer | `10` | How often to sync with the deSEC API (in minutes) |
 | `debug_mode` | Boolean | `false` | Whether to enable debug mode with additional logging |
 
 ## Cache Information
@@ -42,14 +42,27 @@ Here's a complete sample configuration file with all currently implemented optio
 {
   "api_url": "https://desec.io/api/v1",
   "encrypted_auth_token": "gAAAAABl...",
-  "sync_interval_minutes": 5,
+  "sync_interval_minutes": 10,
   "debug_mode": false
 }
 ```
 
 Note: The actual auth token is stored in encrypted form in the configuration file.
 
-## Planned Future Configuration Options
+## Configuration Status Overview
+
+This section provides clarity on which configuration options are currently implemented and which are planned for future versions.
+
+### Currently Implemented
+
+* Core settings (`api_url`, `auth_token`, `sync_interval_minutes`, `debug_mode`)
+* Log console visibility (`show_log_console`)
+* Keepalive interval (`keepalive_interval`)
+* Offline mode (`offline_mode`)
+* Multiline records display (`show_multiline_records`)
+* API throttling (`api_throttle_seconds`)
+
+### Planned Future Configuration Options
 
 The following configuration options are planned for future versions of the application:
 

@@ -103,7 +103,7 @@ The `CacheManager` class implements a multi-layered caching system. For detailed
 The modular design allows for:
 
 - Easy addition of new record types
-- Potential migration to Qt5/PySide in the future
+- Potential migration to Qt5/PySide2 or Qt6/PySide6 in the future
 - Enhanced validation or additional features
 
 ## Testing Approach
