@@ -1058,7 +1058,9 @@ class RecordDialog(QtWidgets.QDialog):
         # Guidance text
         self.guidance_text = QtWidgets.QLabel()
         self.guidance_text.setWordWrap(True)
-        self.guidance_text.setStyleSheet("color: #666; background-color: #f9f9f9; padding: 8px; border-radius: 4px;")
+        # Use palette colors instead of hardcoded colors for theme compatibility
+        self.guidance_text.setAutoFillBackground(True)
+        # We'll set the actual styling in update_record_type_guidance for theme awareness
         self.guidance_text.setTextFormat(QtCore.Qt.TextFormat.RichText)
         layout.addWidget(self.guidance_text)
         
@@ -1131,12 +1133,38 @@ class RecordDialog(QtWidgets.QDialog):
                 f"<b>Format:</b><br>{guidance['format']}<br><br>" +
                 f"<b>Example:</b><br>{guidance['example']}"
             )
+            
+            # Use palette colors for theme compatibility
+            palette = self.guidance_text.palette()
+            bg_color = palette.color(QtGui.QPalette.ColorRole.Base)
+            text_color = palette.color(QtGui.QPalette.ColorRole.Text)
+            
+            # Slightly adjust the background color to stand out from the main background
+            # For light themes, make it slightly darker, for dark themes make it slightly lighter
+            luminance = (0.299 * bg_color.red() + 0.587 * bg_color.green() + 0.114 * bg_color.blue()) / 255
+            if luminance > 0.5:  # Light background
+                # Make it slightly darker for contrast
+                bg_color = bg_color.darker(110)
+            else:  # Dark background
+                # Make it slightly lighter for contrast
+                bg_color = bg_color.lighter(120)
+                
+            # Create custom palette for the guidance text
+            guidance_palette = QtGui.QPalette(palette)
+            guidance_palette.setColor(QtGui.QPalette.ColorRole.Window, bg_color)
+            guidance_palette.setColor(QtGui.QPalette.ColorRole.WindowText, text_color)
+            self.guidance_text.setPalette(guidance_palette)
+            
+            # Add padding and border radius with stylesheet
             self.guidance_text.setStyleSheet(
-                "background-color: #f0f4f8; padding: 10px; border-radius: 5px; margin-bottom: 10px;"
+                f"padding: 10px; border-radius: 5px; margin-bottom: 10px;"
             )
+            
             self.records_input.setPlaceholderText(guidance['example'])
         else:
             self.guidance_text.setText("")
+            # Reset to default palette
+            self.guidance_text.setPalette(self.palette())
             self.guidance_text.setStyleSheet("")
             self.records_input.setPlaceholderText("")
         

@@ -45,6 +45,9 @@ def main():
         app.setOrganizationName("deSECQT")
         app.setWindowIcon(QtGui.QIcon("icon.png"))  # Add an icon if available
         
+        # Force application to process events before theme detection
+        app.processEvents()
+        
         # Set up components
         config_manager = ConfigManager()
         api_client = APIClient(config_manager)

@@ -34,7 +34,10 @@ class ConfigManager:
             "keepalive_interval": 60,  # Default keepalive check interval in seconds
             "offline_mode": False,  # Default to online mode
             "show_multiline_records": True,  # Default to full display of multiline records
-            "api_throttle_seconds": 2  # Default delay between API requests to avoid rate limiting
+            "api_throttle_seconds": 2,  # Default delay between API requests to avoid rate limiting
+            "theme_type": "light",  # Default theme type (light, dark, system)
+            "light_theme_id": "light_plus",  # Default light theme ID
+            "dark_theme_id": "dark_plus"  # Default dark theme ID
         }
         self._ensure_config_dir_exists()
         self._load_config()
@@ -225,3 +228,81 @@ class ConfigManager:
             seconds (float): Delay between API requests in seconds
         """
         self._config["api_throttle_seconds"] = seconds
+        
+    def get_theme_type(self):
+        """Get the theme type (light, dark, or system).
+        
+        Returns:
+            str: The current theme type
+        """
+        return self._config.get("theme_type", "light")  # Default to light theme
+    
+    def set_theme_type(self, theme_type):
+        """Set the theme type.
+        
+        Args:
+            theme_type (str): Theme type ('light', 'dark', or 'system')
+        """
+        self._config["theme_type"] = theme_type
+    
+    def get_theme_id(self):
+        """Get the currently active theme ID based on theme type.
+    
+        Returns:
+            str: The current theme ID
+        """
+        theme_type = self.get_theme_type()
+        if theme_type == "light":
+            return self.get_light_theme_id()
+        elif theme_type == "dark":
+            return self.get_dark_theme_id()
+        else:  # system theme
+            # For system theme, we'll return the appropriate theme based on system detection
+            # This will be handled by ThemeManager when applied
+            return self._config.get("theme_id", "light_plus")
+    
+    def set_theme_id(self, theme_id):
+        """Set the theme ID for the current theme type.
+        
+        Args:
+            theme_id: The theme identifier
+        """
+        theme_type = self.get_theme_type()
+        if theme_type == "light":
+            self.set_light_theme_id(theme_id)
+        elif theme_type == "dark":
+            self.set_dark_theme_id(theme_id)
+        # Also store in legacy theme_id for backward compatibility
+        self._config["theme_id"] = theme_id
+        
+    def get_light_theme_id(self):
+        """Get the light theme ID.
+        
+        Returns:
+            str: The light theme ID
+        """
+        return self._config.get("light_theme_id", "light_plus")
+    
+    def set_light_theme_id(self, theme_id):
+        """Set the light theme ID.
+        
+        Args:
+            theme_id: The light theme identifier
+        """
+        self._config["light_theme_id"] = theme_id
+    
+    def get_dark_theme_id(self):
+        """Get the dark theme ID.
+        
+        Returns:
+            str: The dark theme ID
+        """
+        return self._config.get("dark_theme_id", "dark_plus")
+    
+    def set_dark_theme_id(self, theme_id):
+        """Set the dark theme ID.
+        
+        Args:
+            theme_id: The dark theme identifier
+        """
+        self._config["dark_theme_id"] = theme_id

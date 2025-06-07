@@ -5,6 +5,18 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4-beta] - 2025-06-08
+
+### Added in 0.3.4-beta
+
+- Added comprehensive theme support with light, dark, and system modes
+- Added automatic system theme detection that follows OS dark/light mode
+- Added ROADMAP.md with planned features and current progress
+
+### Fixed in 0.3.4-beta
+
+- Fixed menu structure to maintain clear cache and sync options
+
 ## [0.3.3-beta] - 2025-06-08
 
 ### Added in 0.3.3-beta

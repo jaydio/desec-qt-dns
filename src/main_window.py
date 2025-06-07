@@ -22,6 +22,7 @@ from config_dialog import ConfigDialog
 from zone_list_widget import ZoneListWidget
 from record_widget import RecordWidget
 from log_widget import LogWidget
+from theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +45,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.api_client = api_client
         self.cache_manager = cache_manager
         
+        # Initialize theme manager
+        self.theme_manager = ThemeManager(config_manager)
+        
         # Initialize thread pool for background tasks
         self.thread_pool = QThreadPool()
         
         # Set up the UI
         self.setup_ui()
+        
+        # Apply the current theme
+        self.theme_manager.apply_theme()
         
         # If no auth token is set, prompt for it
         if not self.config_manager.get_auth_token():
@@ -184,18 +191,15 @@ class MainWindow(QtWidgets.QMainWindow):
         
     def create_menus(self):
         """Create application menus."""
+        # Create menu bar
+        menu_bar = self.menuBar()
+        
         # File menu
-        file_menu = self.menuBar().addMenu("&File")
+        file_menu = menu_bar.addMenu("&File")
         
-        # Auth menu item
-        auth_action = QtGui.QAction("Set API &Token", self)
-        auth_action.setStatusTip("Configure API authentication token")
-        auth_action.triggered.connect(self.show_auth_dialog)
-        file_menu.addAction(auth_action)
-        
-        # Config menu item
-        config_action = QtGui.QAction("&Settings", self)
-        config_action.setStatusTip("Configure application settings")
+        # Add action for reconfiguring
+        config_action = QtGui.QAction("&Settings...", self)
+        config_action.setStatusTip("Configure API URL and token")
         config_action.triggered.connect(self.show_config_dialog)
         file_menu.addAction(config_action)
         
@@ -205,55 +209,32 @@ class MainWindow(QtWidgets.QMainWindow):
         clear_cache_action.triggered.connect(self.clear_cache)
         file_menu.addAction(clear_cache_action)
         
-        file_menu.addSeparator()
-        
-        # Exit menu item
-        exit_action = QtGui.QAction("E&xit", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.setStatusTip("Exit the application")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-        
-        # Create connection menu (formerly Status)
-        self.connection_menu = self.menuBar().addMenu("&Connection")
+        # Connection menu
+        connection_menu = menu_bar.addMenu("&Connection")
         
         # Sync now action
         sync_now_action = QtGui.QAction("&Sync Now", self)
         sync_now_action.setToolTip("Manually synchronize with the API")
         sync_now_action.setStatusTip("Manually synchronize with the API")
         sync_now_action.triggered.connect(self.sync_data)
-        self.connection_menu.addAction(sync_now_action)
+        connection_menu.addAction(sync_now_action)
         
-        # Add separator
-        self.connection_menu.addSeparator()
-        
-        # Offline mode toggle
+        # Offline mode action
         self.offline_mode_action = QtGui.QAction("&Offline Mode", self)
+        self.offline_mode_action.setStatusTip("Work without an internet connection")
         self.offline_mode_action.setCheckable(True)
-        self.offline_mode_action.setToolTip("Enable offline mode to work without an internet connection")
-        self.offline_mode_action.setStatusTip("Enable offline mode to work without an internet connection")
         self.offline_mode_action.triggered.connect(self.toggle_offline_mode)
-        self.offline_mode_action.setChecked(self.config_manager.get_offline_mode())
-        self.connection_menu.addAction(self.offline_mode_action)
-        
-        # Check connection
-        check_connection_action = QtGui.QAction("&Check Connection", self)
-        check_connection_action.setToolTip("Check API connectivity")
-        check_connection_action.setStatusTip("Check API connectivity")
-        check_connection_action.triggered.connect(lambda: self.check_api_connectivity(True))
-        self.connection_menu.addAction(check_connection_action)
+        connection_menu.addAction(self.offline_mode_action)
         
         # View menu
-        view_menu = self.menuBar().addMenu("&View")
+        view_menu = menu_bar.addMenu("&View")
         
-        # Log console toggle
-        self.show_log_console_action = QtGui.QAction("Show &Log Console", self)
-        self.show_log_console_action.setStatusTip("Toggle log console visibility")
-        self.show_log_console_action.setCheckable(True)
-        # Set checked state based on configuration
-        self.show_log_console_action.setChecked(self.config_manager.get_show_log_console())
-        self.show_log_console_action.triggered.connect(self.toggle_log_console)
-        view_menu.addAction(self.show_log_console_action)
+        # Show log console action
+        self.toggle_log_action = QtGui.QAction("Show Log Console", self)
+        self.toggle_log_action.setCheckable(True)
+        self.toggle_log_action.setChecked(self.config_manager.get_show_log_console())
+        self.toggle_log_action.triggered.connect(self.toggle_log_console)
+        view_menu.addAction(self.toggle_log_action)
         
         # Multiline records display toggle
         self.show_multiline_records_action = QtGui.QAction("Show &Multiline Records", self)
@@ -268,7 +249,7 @@ class MainWindow(QtWidgets.QMainWindow):
         view_menu.addSeparator()
         
         # Help menu
-        help_menu = self.menuBar().addMenu("&Help")
+        help_menu = menu_bar.addMenu("&Help")
         
         # Changelog menu item
         changelog_action = QtGui.QAction("&Changelog", self)
@@ -626,11 +607,14 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def show_config_dialog(self):
         """Show the configuration dialog."""
-        dialog = ConfigDialog(self.config_manager, self)
-        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+        config_dialog = ConfigDialog(self.config_manager, self.theme_manager, self)
+        if config_dialog.exec():
+            # Update sync interval
             self.update_sync_interval()
-            self.api_client.check_connectivity()
-            self.sync_data()
+            # Apply any theme changes
+            self.theme_manager.apply_theme()
+            # Perform a fresh check on the API
+            self.check_api_connectivity(True)
     
     def log_message(self, message, level="info"):
         """
@@ -678,7 +662,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """Toggle the visibility of the log console based on menu action."""
         if hasattr(self, 'log_widget'):
             # Get new state from the action
-            is_checked = self.show_log_console_action.isChecked()
+            is_checked = self.toggle_log_action.isChecked()
             
             # Update the log widget visibility
             # The widget remains in the layout, we just control visibility
@@ -731,7 +715,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "<h2 align=\"center\">deSEC Qt DNS Manager</h2>"
             "<p align=\"center\">A desktop application for managing DNS zones and records<br/>"
             "using the deSEC API.</p>"
-            "<p align=\"center\"><b>Version 0.3.3-beta</b></p>"
+            "<p align=\"center\"><b>Version 0.3.4-beta</b></p>"
             "<hr/>"
             "<p align=\"center\">🚀 Developed by <b>JD Bungart</b></p>"
             "<p align=\"center\">✉️ <a href=\"mailto:me@jdneer.com\">me@jdneer.com</a></p>"
@@ -1022,6 +1006,32 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.sync_data()
             else:
                 self.log_message("Failed to clear cache completely. Some files may remain.", "error")
+    
+    def on_theme_type_changed(self, action):
+        """Handle theme type change.
+        
+        Args:
+            action: The triggered QAction
+        """
+        theme_type = action.data()
+        if theme_type:
+            self.config_manager.set_theme_type(theme_type)
+            self.config_manager.save_config()
+            self.theme_manager.apply_theme()
+    
+    def on_theme_changed(self, action, theme_type):
+        """Handle theme selection change.
+        
+        Args:
+            action: The triggered QAction
+            theme_type: The theme type (light or dark)
+        """
+        theme_id = action.data()
+        if theme_id:
+            self.config_manager.set_theme_type(theme_type)
+            self.config_manager.set_theme_id(theme_id)
+            self.config_manager.save_config()
+            self.theme_manager.apply_theme()
     
     def closeEvent(self, event):
         """Handle window close event."""
