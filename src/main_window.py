@@ -669,7 +669,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "<h2 align=\"center\">deSEC Qt DNS Manager</h2>"
             "<p align=\"center\">A desktop application for managing DNS zones and records<br/>"
             "using the deSEC API.</p>"
-            "<p align=\"center\"><b>Version 0.3.0-beta</b></p>"
+            "<p align=\"center\"><b>Version 0.3.1-beta</b></p>"
             "<p align=\"center\"><a href=\"https://github.com/jaydio/desec-qt-dns/blob/master/CHANGELOG.md\">View Changelog</a></p>"
             "<hr/>"
             "<p align=\"center\">🚀 Developed by <b>JD Bungart</b></p>"

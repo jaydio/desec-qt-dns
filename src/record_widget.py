@@ -7,8 +7,11 @@ Displays and manages DNS records for a selected zone.
 """
 
 import logging
+import time
 from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QThreadPool
+
+from workers import LoadRecordsWorker
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +44,29 @@ class RecordWidget(QtWidgets.QWidget):
             'tooltip': 'Enter an IPv6 address (e.g., 2001:db8::1)',
             'validation': r'^[0-9a-fA-F:]+$'
         },
+        'CAA': {
+            'format': '<flags> <tag> <value>',
+            'example': '0 issue "letsencrypt.org"',
+            'tooltip': 'Certificate Authority Authorization record that specifies which CAs are allowed to issue certificates',
+            'validation': r'^\d+\s+(issue|issuewild|iodef)\s+"[^"]+"$'
+        },
+        'SSHFP': {
+            'format': '<algorithm> <type> <fingerprint>',
+            'example': '2 1 123456789abcdef67890123456789abcdef67890',
+            'tooltip': 'SSH Public Key Fingerprint record for SSH server authentication',
+            'validation': r'^[1-4]\s+[1-2]\s+[0-9a-fA-F]+$'
+        },
+        'TLSA': {
+            'format': 'usage selector matching-type certificate-data',
+            'example': '3 1 1 d2abde240d7cd3ee6b4b28c54df034b97983a1d16e8a410e4561cb106618e971',
+            'tooltip': 'TLS Authentication record to provide certificate association data for TLS servers',
+            'validation': r'^[0-3]\s+[0-1]\s+[0-2]\s+[0-9a-fA-F]+$'
+        },
         'AFSDB': {
             'format': 'subtype hostname',
             'example': '1 afsdb.example.com.',
-            'tooltip': 'Enter subtype (1 or 2) and hostname with trailing dot'
+            'tooltip': 'Enter subtype (1 or 2) and hostname with trailing dot',
+            'validation': r'^[1-2]\s+[a-zA-Z0-9.-]+\.$'
         },
         'APL': {
             'format': 'address prefix list',
@@ -200,7 +222,8 @@ class RecordWidget(QtWidgets.QWidget):
         'SRV': {
             'format': 'priority weight port target',
             'example': '0 5 443 example.com.',
-            'tooltip': 'Enter priority, weight, port, and target hostname with trailing dot'
+            'tooltip': 'Specify location of service (e.g., XMPP, SIP). All values must be integers (0-65535) and the target must end with a dot.',
+            'validation': r'^[0-9]+\s+[0-9]+\s+[0-9]+\s+[a-zA-Z0-9.\-_]+\.$'
         },
         'SSHFP': {
             'format': 'algorithm type fingerprint',
@@ -230,81 +253,174 @@ class RecordWidget(QtWidgets.QWidget):
         }
     }
     
-    def __init__(self, api_client, cache_manager, parent=None):
+    def __init__(self, api_client, cache_manager, config_manager=None, parent=None):
         """
         Initialize the record widget.
         
         Args:
             api_client: API client instance
             cache_manager: Cache manager instance
-            parent: Parent widget, if any
+            config_manager: Configuration manager instance for settings (optional)
         """
-        super(RecordWidget, self).__init__(parent)
+        super().__init__()
         
+        # Store API client for API interactions
         self.api_client = api_client
         self.cache_manager = cache_manager
+        self.config_manager = config_manager
         self.current_domain = None
         self.records = []
-        self.is_online = True
+        self.is_online = True  # Start assuming we are online
         
+        # Initialize multiline display setting from config if available
+        self.show_multiline = False  # Default value
+        if self.config_manager:
+            self.show_multiline = self.config_manager.get_show_multiline_records()
+        
+        self.threadpool = QThreadPool()
+        
+        # Setup UI
         # Set up the UI
         self.setup_ui()
     
     def setup_ui(self):
         """Set up the user interface."""
+        # Main layout
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)  # Standard 6px margin
+        layout.setSpacing(6)  # Standard 6px spacing
         
-        # Create splitter
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        layout.addWidget(splitter)
+        # Header section - title, count and search field
+        header_layout = QtWidgets.QVBoxLayout()
+        header_layout.setSpacing(6)  # Consistent spacing
         
-        # Top widget - records table
-        top_widget = QtWidgets.QWidget()
-        top_layout = QtWidgets.QVBoxLayout(top_widget)
+        # Title and count
+        title_layout = QtWidgets.QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Help text for records
-        help_text = QtWidgets.QLabel(
-            "<p style='color: #666; margin: 0;'>This manager now supports all DNS record types including: "  
-            "A, AAAA, CNAME, MX, TXT, SRV, NS, and many more.</p>"
-            "<p style='color: #666; margin-top: 2px;'>When adding records, helpful guidance will be provided based on the selected record type.</p>"
-        )
-        help_text.setWordWrap(True)
-        help_text.setTextFormat(QtCore.Qt.TextFormat.RichText)
-        help_text.setStyleSheet("background-color: #f8f9fa; padding: 8px; border-radius: 4px; margin-bottom: 8px;")
-        top_layout.addWidget(help_text)
+        title = QtWidgets.QLabel("DNS Records (RRsets)")
+        title.setStyleSheet("font-weight: bold;")
+        title.setMinimumWidth(100)  # Fixed width for right alignment
+        title_layout.addWidget(title)
+        
+        title_layout.addStretch()
+        
+        self.records_count_label = QtWidgets.QLabel("Total records: 0")
+        title_layout.addWidget(self.records_count_label)
+        
+        header_layout.addLayout(title_layout)
+        
+        # Search field (match spacing with Zone widget)
+        search_layout = QtWidgets.QHBoxLayout()
+        search_layout.setContentsMargins(0, 6, 0, 6)  # Add vertical padding
+        
+        search_label = QtWidgets.QLabel("Search:")
+        search_label.setMinimumWidth(50)  # Fixed width for right alignment
+        search_layout.addWidget(search_label)
+        
+        self.records_search_input = QtWidgets.QLineEdit()
+        self.records_search_input.setFixedHeight(25)  # Consistent height with zone widget
+        self.records_search_input.setPlaceholderText("Type to filter records...")
+        self.records_search_input.textChanged.connect(self.filter_records)
+        search_layout.addWidget(self.records_search_input)
+        
+        header_layout.addLayout(search_layout)
+        
+        # Add header layout to main layout
+        layout.addLayout(header_layout)
         
         # Records table
         self.records_table = QtWidgets.QTableWidget()
-        self.records_table.setColumnCount(5)
-        self.records_table.setHorizontalHeaderLabels(["Name", "Type", "TTL", "Content", "Actions"])
-        self.records_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.records_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.records_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.records_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)  # Content column stretches
-        self.records_table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.records_table.verticalHeader().setVisible(False)
+        self.records_table.setColumnCount(5)  # Name, Type, TTL, Content, Actions
+        
+        # Create header items with sort icons for sortable columns
+        name_header = QtWidgets.QTableWidgetItem("Name ↕")
+        name_header.setToolTip("Click to sort by name")
+        name_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        type_header = QtWidgets.QTableWidgetItem("Type ↕")
+        type_header.setToolTip("Click to sort by record type")
+        type_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        ttl_header = QtWidgets.QTableWidgetItem("TTL ↕")
+        ttl_header.setToolTip("Click to sort by TTL value")
+        ttl_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        content_header = QtWidgets.QTableWidgetItem("Content ↕")
+        content_header.setToolTip("Click to sort by content")
+        content_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        actions_header = QtWidgets.QTableWidgetItem("Actions")
+        actions_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        self.records_table.setHorizontalHeaderItem(0, name_header)
+        self.records_table.setHorizontalHeaderItem(1, type_header)
+        self.records_table.setHorizontalHeaderItem(2, ttl_header)
+        self.records_table.setHorizontalHeaderItem(3, content_header)
+        self.records_table.setHorizontalHeaderItem(4, actions_header)
+        
+        # Set table properties
         self.records_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.records_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.records_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.records_table.setAlternatingRowColors(True)
-        self.records_table.setSortingEnabled(True)
+        # Enable interactive column width adjustment by the user
+        self.records_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Interactive)  # Name column
+        self.records_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Interactive)  # Type column
+        self.records_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Interactive)  # TTL column
+        self.records_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)  # Content column stretches
+        self.records_table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.Interactive)  # Actions column
+        
+        # Set initial default widths for better appearance
+        self.records_table.setColumnWidth(0, 120)  # Name column
+        self.records_table.setColumnWidth(1, 100)  # Type column
+        self.records_table.setColumnWidth(2, 80)   # TTL column
+        self.records_table.setColumnWidth(4, 140)  # Actions column
+        self.records_table.verticalHeader().setVisible(False)
+        
+        # Enhance sort indicator visibility
         self.records_table.horizontalHeader().setSortIndicatorShown(True)
         self.records_table.horizontalHeader().sortIndicatorChanged.connect(self.sort_records_table)
+        
+        # Set default sort by name (column 0) in ascending order
+        self.records_table.setSortingEnabled(True)
+        self.records_table.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
         self.records_table.cellDoubleClicked.connect(self.handle_cell_double_clicked)
-        self.records_table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
-        top_layout.addWidget(self.records_table)
+        
+        # Set table style to match zone list
+        self.records_table.setStyleSheet(
+            "QTableWidget { border: 1px solid #ccc; }"
+        )
+        
+        # Set the table to take all available space
+        self.records_table.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        
+        # Add stretch factor to match zone list widget
+        layout.addWidget(self.records_table, 1)
+        
+        # Add spacer to push buttons to bottom for alignment with zone list widget
+        button_spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum, 
+                                          QtWidgets.QSizePolicy.Policy.Expanding)
+        layout.addItem(button_spacer)
+        
+        # Action buttons
+        actions_layout = QtWidgets.QHBoxLayout()
+        actions_layout.setContentsMargins(0, 6, 0, 6)  # Add spacing for visual separation
         
         # Add record button
-        actions_layout = QtWidgets.QHBoxLayout()
         self.add_record_btn = QtWidgets.QPushButton("Add Record")
+        self.add_record_btn.setFixedHeight(25)
+        self.add_record_btn.setFixedWidth(90)
         self.add_record_btn.clicked.connect(self.show_add_record_dialog)
+        self.add_record_btn.setEnabled(self.is_online)
+        if not self.is_online:
+            self.add_record_btn.setToolTip("Unavailable in offline mode")
         actions_layout.addWidget(self.add_record_btn)
         
-        # Add spacer to push buttons to the left
+        # Add stretch to align buttons to the left
         actions_layout.addStretch()
         
-        top_layout.addLayout(actions_layout)
-        
-        splitter.addWidget(top_widget)
+        layout.addLayout(actions_layout)
     
     def set_domain(self, domain_name):
         """
@@ -317,55 +433,138 @@ class RecordWidget(QtWidgets.QWidget):
         self.refresh_records()
     
     def set_online_status(self, is_online):
-        """
-        Update the online status and enable/disable UI elements accordingly.
+        """Update the online status and enable/disable UI elements accordingly.
         
         Args:
             is_online (bool): Whether the application is online
         """
         self.is_online = is_online
-        self.add_record_btn.setEnabled(is_online)
+        self.set_edit_enabled(is_online)
         
-        # Update the tooltip to explain why buttons might be disabled
-        if not is_online:
-            self.add_record_btn.setToolTip("Unavailable in offline mode")
-        else:
-            self.add_record_btn.setToolTip("")
+    def set_multiline_display(self, show_multiline):
+        """Set whether to show multiline records in full or condensed format
+        
+        Args:
+            show_multiline (bool): Whether to show multiline records in full
+        """
+        if self.show_multiline != show_multiline:
+            self.show_multiline = show_multiline
+            # Update the display immediately if we have records
+            if hasattr(self, 'records') and self.records:
+                self.update_records_table()
+                
+                # Adjust row heights if multiline display is enabled
+                if self.show_multiline:
+                    self.records_table.resizeRowsToContents()
+                else:
+                    # Reset to default row height when disabled
+                    for row in range(self.records_table.rowCount()):
+                        self.records_table.setRowHeight(row, self.records_table.verticalHeader().defaultSectionSize())
+    
+    def set_edit_enabled(self, enabled):
+        """Enable or disable record editing controls based on online mode.
+        
+        Args:
+            enabled (bool): Whether editing is enabled
+        """
+        # Enable/disable add button
+        if hasattr(self, 'add_record_btn'):
+            self.add_record_btn.setEnabled(enabled)
+            # Update the tooltip to explain why it's disabled
+            if not enabled:
+                self.add_record_btn.setToolTip("Adding records is disabled in offline mode")
+            else:
+                self.add_record_btn.setToolTip("")
+        
+        # Enable/disable edit button
+        for row in range(self.records_table.rowCount()):
+            edit_btn = self.records_table.cellWidget(row, 4).layout().itemAt(0).widget()
+            edit_btn.setEnabled(enabled)
+            # Update the tooltip to explain why it's disabled
+            if not enabled:
+                edit_btn.setToolTip("Editing records is disabled in offline mode")
+            else:
+                edit_btn.setToolTip("Edit the selected record")
+                
+        # Enable/disable delete button
+        for row in range(self.records_table.rowCount()):
+            delete_btn = self.records_table.cellWidget(row, 4).layout().itemAt(1).widget()
+            delete_btn.setEnabled(enabled)
+            # Update the tooltip to explain why it's disabled
+            if not enabled:
+                delete_btn.setToolTip("Deleting records is disabled in offline mode")
+            else:
+                delete_btn.setToolTip("Delete the selected record")
     
     def refresh_records(self):
         """Refresh the records for the current domain."""
         if not self.current_domain:
             return
             
-        if self.api_client.is_online:
-            # Online mode - get records from API
-            success, response = self.api_client.get_records(self.current_domain)
+        # First check cache regardless of online status
+        start_time = time.time()
+        cached_records, cache_timestamp = self.cache_manager.get_cached_records(self.current_domain)
+        
+        if cached_records is not None:
+            # We have cached records, use them immediately for responsiveness
+            self.records = cached_records
+            self.update_records_table()
+            elapsed = (time.time() - start_time) * 1000
+            logger.debug(f"Loaded {len(cached_records)} cached records in {elapsed:.1f}ms")
             
-            if success:
-                self.records = response
-                self.cache_manager.cache_records(self.current_domain, self.records)
-                self.update_records_table()
-            else:
-                self.log_message.emit(f"Failed to load records: {response}", "error")
-                # Try to load from cache as fallback
-                self._load_from_cache()
+            # Only fetch from API if online and cache is stale (or we need to refresh)
+            # Default sync interval to 5 minutes for staleness check
+            if self.api_client.is_online and self.cache_manager.is_cache_stale(cache_timestamp, 5):
+                # Use worker for background API update
+                self.fetch_records_async()
+            
+        # Only if cache is empty and we're online, fetch records asynchronously
+        elif self.api_client.is_online:
+            # Use worker for background API update
+            self.fetch_records_async()
+            # Show loading message
+            self.log_message.emit(f"Loading records for {self.current_domain}...", "info")
         else:
-            # Offline mode - get records from cache
-            self._load_from_cache()
+            # Offline with no cache
+            self.records = []
+            self.update_records_table()
+            self.log_message.emit("No cached records available for this zone", "warning")
     
     def _load_from_cache(self):
         """Load records from cache."""
-        if not self.current_domain:
-            return
-            
-        cached_records, timestamp = self.cache_manager.get_cached_records(self.current_domain)
+        cached_records, _ = self.cache_manager.get_cached_records(self.current_domain)
         
-        if cached_records is not None:
+        if cached_records:
             self.records = cached_records
             self.update_records_table()
-            self.log_message.emit(f"Loaded {len(cached_records)} records from cache", "info")
+            self.log_message.emit(
+                f"Loaded {len(cached_records)} records for {self.current_domain} from cache", 
+                "info"
+            )
         else:
-            self.log_message.emit("No cached records available", "warning")
+            self.log_message.emit(f"No cached records for {self.current_domain}", "warning")
+    def fetch_records_async(self):
+        """Fetch records asynchronously using a worker thread."""
+        # Create and start a worker to fetch records in background
+        worker = LoadRecordsWorker(self.api_client, self.current_domain, self.cache_manager)
+        worker.signals.finished.connect(self.handle_records_result)
+        self.threadpool.start(worker)
+        
+    def handle_records_result(self, success, records, zone_name, error_msg):
+        """Handle the result of asynchronous record loading.
+        
+        Args:
+            success: Whether the operation was successful
+            records: List of record dictionaries
+            zone_name: Name of the zone
+            error_msg: Error message if any
+        """
+        if success and zone_name == self.current_domain:
+            # Only update if this is still the current domain
+            self.records = records
+            self.update_records_table()
+        elif not success and error_msg:
+            self.log_message.emit(f"Error: {error_msg}", "error")
             self.records = []
             self.update_records_table()
     
@@ -381,10 +580,30 @@ class RecordWidget(QtWidgets.QWidget):
         # If no domain selected, nothing to display
         if not self.current_domain:
             self.records_table.setSortingEnabled(was_sorting_enabled)
+            self.records_count_label.setText("No domain selected")
             return
+        
+        # Get current filter text
+        filter_text = getattr(self, '_current_filter', '').lower()
+        
+        # Calculate the number of filtered records for display
+        total_records = len(self.records)
+        filtered_records = []
         
         # Note: we no longer pre-sort the records since we'll use Qt's built-in sorting
         for row, record in enumerate(self.records):
+            # Filter records by name, type, or content
+            if filter_text in record.get('subname', '').lower() or filter_text in record.get('type', '').lower() or filter_text in "\n".join(record.get('records', [])).lower():
+                filtered_records.append(record)
+        
+        # Update the records count label
+        filtered_count = len(filtered_records)
+        if filter_text:
+            self.records_count_label.setText(f"Showing {filtered_count} out of {total_records} records")
+        else:
+            self.records_count_label.setText(f"Total records: {total_records}")
+        
+        for row, record in enumerate(filtered_records):
             self.records_table.insertRow(row)
             
             # Name column (subname)
@@ -427,11 +646,12 @@ class RecordWidget(QtWidgets.QWidget):
             
             # Content column (join multiple records with newlines)
             records_list = record.get('records', [])
-            content_text = "\n".join(records_list[:3])  # Show first 3 records
-            if len(records_list) > 3:
-                content_text += f"\n... ({len(records_list) - 3} more)"
+            
+            # Always show all records in the content, but control row height separately
+            content_text = "\n".join(records_list)
+                    
             content_item = QtWidgets.QTableWidgetItem(content_text)
-            content_item.setToolTip("\n".join(records_list))  # Show all in tooltip
+            content_item.setToolTip("\n".join(records_list))  # Show all in tooltip regardless of display mode
             self.records_table.setItem(row, 3, content_item)
             
             # Actions column
@@ -443,7 +663,11 @@ class RecordWidget(QtWidgets.QWidget):
             # Edit button
             edit_btn = QtWidgets.QPushButton("Edit")
             edit_btn.setFixedSize(60, 25)
-            edit_btn.clicked.connect(lambda _, r=row: self.edit_record(r))
+            # Store the record directly instead of row index to avoid sorting/filtering issues
+            record_ref = record  # Make sure we reference this specific record
+            edit_btn.clicked.connect(lambda _, rec=record_ref: self.edit_record_by_ref(rec))
+            # Store the record as a property on the button for Delete key handling
+            edit_btn.setProperty('record_ref', record_ref)
             edit_btn.setEnabled(self.is_online)
             if not self.is_online:
                 edit_btn.setToolTip("Unavailable in offline mode")
@@ -451,7 +675,11 @@ class RecordWidget(QtWidgets.QWidget):
             # Delete button
             delete_btn = QtWidgets.QPushButton("Delete")
             delete_btn.setFixedSize(60, 25)
-            delete_btn.clicked.connect(lambda _, r=row: self.delete_record(r))
+            # Store the record directly instead of row index to avoid sorting/filtering issues
+            record_ref = record  # Make sure we reference this specific record
+            delete_btn.clicked.connect(lambda _, rec=record_ref: self.delete_record_by_ref(rec))
+            # Store the record as a property on the button for Delete key handling
+            delete_btn.setProperty('record_ref', record_ref)
             delete_btn.setEnabled(self.is_online)
             if not self.is_online:
                 delete_btn.setToolTip("Unavailable in offline mode")
@@ -462,8 +690,19 @@ class RecordWidget(QtWidgets.QWidget):
             
             self.records_table.setCellWidget(row, 4, actions_widget)
         
-        self.records_table.resizeColumnsToContents()
+        # Only set column stretch mode for content column
+        # Don't resize other columns to preserve user column width preferences
         self.records_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)  # Content column
+        
+        # Adjust row heights based on multiline display setting
+        if self.show_multiline:
+            # Allow rows to expand to fit content
+            self.records_table.resizeRowsToContents()
+        else:
+            # Use fixed height rows in condensed mode
+            default_height = self.records_table.verticalHeader().defaultSectionSize()
+            for row in range(self.records_table.rowCount()):
+                self.records_table.setRowHeight(row, default_height)
     
         # Re-enable sorting if it was enabled before
         self.records_table.setSortingEnabled(was_sorting_enabled)
@@ -472,6 +711,19 @@ class RecordWidget(QtWidgets.QWidget):
         if was_sorting_enabled:
             self.records_table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
     
+    def filter_records(self, filter_text):
+        """
+        Filter the records table by name, type, or content.
+        
+        Args:
+            filter_text (str): Text to filter by
+        """
+        # Store the filter text for later use
+        self._current_filter = filter_text.lower()
+        
+        # Reapply the filter by updating the table
+        self.update_records_table()
+
     def show_add_record_dialog(self):
         """Show dialog to add a new record."""
         if not self.current_domain or not self.is_online:
@@ -485,14 +737,55 @@ class RecordWidget(QtWidgets.QWidget):
             self.refresh_records()
     
     def sort_records_table(self, column, order):
-        """Sort the records table based on column clicked."""
-        self.records_table.sortItems(column, Qt.SortOrder(order))
+        """Sort the records table based on column clicked.
+        
+        Args:
+            column: The column index to sort by
+            order: The sort order (ascending or descending)
+        """
+        # Only enable sorting on Name (0), Type (1), TTL (2), and Content (3) columns
+        if column <= 3:
+            self.records_table.sortItems(column, Qt.SortOrder(order))
+            
+            # Update header text to indicate current sort column and direction
+            header_items = ["Name", "Type", "TTL", "Content", "Actions"]
+            for i in range(len(header_items)):
+                item = self.records_table.horizontalHeaderItem(i)
+                if i == column:
+                    # Add sort direction indicator
+                    arrow = "↑" if order == Qt.SortOrder.AscendingOrder else "↓"
+                    item.setText(f"{header_items[i]} {arrow}")
+                elif i < 4:  # Only add sort indicator to sortable columns
+                    # Reset other sortable headers
+                    item.setText(f"{header_items[i]} ↕")
+                else:
+                    # Actions column has no sort indicator
+                    item.setText(header_items[i])
     
     def handle_cell_double_clicked(self, row, column):
         """Handle double-click on a cell."""
         # Ignore double-click on the Actions column
         if column != 4:  # 4 is the Actions column
-            self.edit_record(row)
+            record_item = self.records_table.item(row, 0)
+            record = record_item.data(Qt.ItemDataRole.UserRole)
+            if record:
+                self.edit_record_by_ref(record)
+    
+    def edit_record_by_ref(self, record):
+        """Edit a record by reference instead of by row index.
+        
+        Args:
+            record (dict): The record object to edit
+        """
+        if not self.is_online or not record:
+            return
+            
+        dialog = RecordDialog(self.current_domain, self.api_client, record=record, parent=self)
+        dialog.setWindowTitle("Edit DNS Record")
+        
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.records_changed.emit()
+            self.refresh_records()
     
     def edit_record(self, row):
         """
@@ -517,22 +810,64 @@ class RecordWidget(QtWidgets.QWidget):
             self.records_changed.emit()
             self.refresh_records()
     
-    def delete_record(self, row):
+    def delete_selected_record(self):
+        """Delete the currently selected record in the table.
+        Called when pressing the Delete key while the records table has focus.
         """
-        Delete a record.
+        if not hasattr(self, 'records_table') or not self.is_online:
+            return
+            
+        # Get the currently selected row
+        selected_rows = self.records_table.selectedIndexes()
+        if not selected_rows:
+            return
+        
+        # Get the row of the first selected cell
+        row = selected_rows[0].row()
+        if row < 0 or row >= self.records_table.rowCount():
+            return
+        
+        # Get the record reference from the delete button in the actions column
+        try:
+            # Get reference to the actions column containing edit/delete buttons
+            actions_cell = self.records_table.cellWidget(row, 4)  # Column 4 is actions
+            if not actions_cell or not actions_cell.layout():
+                self.log_message.emit("Could not access actions cell for deletion", "warning")
+                return
+            
+            # Get the delete button (second button in the layout)
+            if actions_cell.layout().count() > 1:
+                delete_btn = actions_cell.layout().itemAt(1).widget()
+                if delete_btn and delete_btn.property('record_ref'):
+                    record = delete_btn.property('record_ref')
+                    if record:
+                        self.delete_record_by_ref(record)
+                        return
+                    
+            # Fallback: try to get the reference from any buttons in the layout
+            for i in range(actions_cell.layout().count()):
+                item = actions_cell.layout().itemAt(i)
+                if item and item.widget() and hasattr(item.widget(), 'property'):
+                    btn = item.widget()
+                    record = btn.property('record_ref')
+                    if record:
+                        self.delete_record_by_ref(record)
+                        return
+                        
+            self.log_message.emit("No record reference found for deletion", "warning")
+            
+        except Exception as e:
+            self.log_message.emit(f"Error accessing record for deletion: {str(e)}", "error")
+    
+    def delete_record_by_ref(self, record):
+        """Delete a record by reference instead of by row index.
         
         Args:
-            row (int): Row index in the table
+            record (dict): The record object to delete
         """
-        if not self.is_online:
+        if not self.is_online or not record:
             return
-            
-        record_item = self.records_table.item(row, 0)
-        record = record_item.data(Qt.ItemDataRole.UserRole)
         
-        if not record:
-            return
-            
         # Get record details
         subname = record.get('subname', '')
         type = record.get('type', '')
@@ -554,13 +889,18 @@ class RecordWidget(QtWidgets.QWidget):
         record_content = "\n".join(record.get('records', ['<empty>']))
         
         # Delete record with detailed logging
-        self.log_message.emit(f"Deleting {type} record for '{record_name}' with content: {record_content}", "info")
+        ttl = record.get('ttl', 0)  # Include TTL in log
+        self.log_message.emit(f"Deleting {type} record for '{record_name}' with TTL: {ttl}, content: {record_content}", "info")
         
         success, response = self.api_client.delete_record(self.current_domain, subname, type)
         
         if success:
-            self.log_message.emit(f"Successfully deleted {type} record for '{record_name}'", "success")
+            self.log_message.emit(f"Successfully deleted {type} record for '{record_name}' with TTL: {ttl}", "success")
+            # Force invalidation of the cache for this domain
+            self.cache_manager.clear_domain_cache(self.current_domain)
+            # Emit signal first (for any listeners)
             self.records_changed.emit()
+            # Then refresh our own view
             self.refresh_records()
         else:
             self.log_message.emit(f"Failed to delete record: {response}", "error")
@@ -617,18 +957,87 @@ class RecordDialog(QtWidgets.QDialog):
         # Type field
         self.type_combo = QtWidgets.QComboBox()
         # Sort the record types alphabetically for easier finding
+        record_type_descriptions = {
+            'A': 'A (IPv4 Address)',
+            'AAAA': 'AAAA (IPv6 Address)',
+            'AFSDB': 'AFSDB (AFS Database)',
+            'APL': 'APL (Address Prefix List)',
+            'CAA': 'CAA (Certification Authority Authorization)',
+            'CDNSKEY': 'CDNSKEY (Child DNS Key)',
+            'CDS': 'CDS (Child Delegation Signer)',
+            'CERT': 'CERT (Certificate)',
+            'CNAME': 'CNAME (Canonical Name)',
+            'DHCID': 'DHCID (DHCP Identifier)',
+            'DNAME': 'DNAME (Delegation Name)',
+            'DNSKEY': 'DNSKEY (DNS Key)',
+            'DLV': 'DLV (DNSSEC Lookaside Validation)',
+            'DS': 'DS (Delegation Signer)',
+            'EUI48': 'EUI48 (MAC Address)',
+            'EUI64': 'EUI64 (Extended MAC Address)',
+            'HINFO': 'HINFO (Host Information)',
+            'HTTPS': 'HTTPS (HTTPS Service)',
+            'KX': 'KX (Key Exchanger)',
+            'L32': 'L32 (Location IPv4)',
+            'L64': 'L64 (Location IPv6)',
+            'LOC': 'LOC (Location)',
+            'LP': 'LP (Location Pointer)',
+            'MX': 'MX (Mail Exchange)',
+            'NAPTR': 'NAPTR (Name Authority Pointer)',
+            'NID': 'NID (Node Identifier)',
+            'NS': 'NS (Name Server)',
+            'OPENPGPKEY': 'OPENPGPKEY (OpenPGP Public Key)',
+            'PTR': 'PTR (Pointer)',
+            'RP': 'RP (Responsible Person)',
+            'SMIMEA': 'SMIMEA (S/MIME Cert Association)',
+            'SPF': 'SPF (Sender Policy Framework)',
+            'SRV': 'SRV (Service)',
+            'SSHFP': 'SSHFP (SSH Fingerprint)',
+            'SVCB': 'SVCB (Service Binding)',
+            'TLSA': 'TLSA (TLS Association)',
+            'TXT': 'TXT (Text)',
+            'URI': 'URI (Uniform Resource Identifier)'
+        }
         for record_type in sorted(RecordWidget.SUPPORTED_TYPES):
-            self.type_combo.addItem(record_type)
+            self.type_combo.addItem(record_type_descriptions.get(record_type, record_type))
         self.type_combo.currentIndexChanged.connect(self.update_record_type_guidance)
         form.addRow("Type:", self.type_combo)
         
-        # TTL field
-        self.ttl_input = QtWidgets.QSpinBox()
-        self.ttl_input.setRange(60, 86400)  # 1 minute to 1 day
-        self.ttl_input.setValue(3600)  # Default 1 hour
-        self.ttl_input.setSingleStep(60)
-        self.ttl_input.setSuffix(" seconds")
-        form.addRow("TTL:", self.ttl_input)
+        # TTL field - replace spinbox with combo box of common values
+        self.ttl_input = QtWidgets.QComboBox()
+        
+        # Add common TTL values with human-readable labels
+        ttl_values = [
+            (60, "60 seconds (1 minute)"),
+            (300, "300 seconds (5 minutes)"),
+            (600, "600 seconds (10 minutes)"),
+            (900, "900 seconds (15 minutes)"),
+            (1800, "1800 seconds (30 minutes)"),
+            (3600, "3600 seconds (1 hour)"),
+            (7200, "7200 seconds (2 hours)"),
+            (14400, "14400 seconds (4 hours)"),
+            (86400, "86400 seconds (24 hours)")
+            # 604800 removed - deSEC only supports up to 86400 (24 hours)
+        ]
+        
+        for value, label in ttl_values:
+            self.ttl_input.addItem(label, value)
+            
+        # Set default to 1 hour
+        self.ttl_input.setCurrentIndex(5)  # 3600 seconds (1 hour)
+        
+        # Create a layout with the dropdown and a note for low TTL values
+        ttl_layout = QtWidgets.QVBoxLayout()
+        ttl_layout.setContentsMargins(0, 0, 0, 0)
+        ttl_layout.addWidget(self.ttl_input)
+        
+        ttl_note = QtWidgets.QLabel("Note: deSEC supports TTL values between 3600-86400 seconds (1-24 hours).\nTTL below 3600 (1 hour) is possible but requires account modification via support@desec.io.")
+        ttl_note.setStyleSheet("color: #666; font-size: 10px;")
+        ttl_note.setWordWrap(True)
+        ttl_layout.addWidget(ttl_note)
+        
+        ttl_container = QtWidgets.QWidget()
+        ttl_container.setLayout(ttl_layout)
+        form.addRow("TTL:", ttl_container)
         
         # Records field
         self.records_label = QtWidgets.QLabel("Record Content:")
@@ -670,15 +1079,37 @@ class RecordDialog(QtWidgets.QDialog):
             return
             
         # Disable changing the record type and subname when editing
-        self.type_combo.setCurrentText(self.record.get('type', ''))
+        record_type = self.record.get('type', '')
+        
+        # Find the matching record type in the dropdown (which now has descriptions)
+        for i in range(self.type_combo.count()):
+            current_type = self.type_combo.itemText(i)
+            # Check if this dropdown item starts with our record type
+            if current_type.startswith(record_type + ' (') or current_type == record_type:
+                self.type_combo.setCurrentIndex(i)
+                break
+        
         self.type_combo.setEnabled(False)
         
         self.subname_input.setText(self.record.get('subname', ''))
         self.subname_input.setEnabled(False)
         
-        self.ttl_input.setValue(self.record.get('ttl', 3600))
+        # Find and select the matching TTL value in the dropdown
+        ttl_value = self.record.get('ttl', 3600)
+        index = self.ttl_input.findData(ttl_value)
+        
+        # If exact match not found, find closest value
+        if index == -1:
+            # Get all available TTL values
+            available_ttls = [self.ttl_input.itemData(i) for i in range(self.ttl_input.count())]
+            # Find closest match by minimizing absolute difference
+            closest_ttl = min(available_ttls, key=lambda x: abs(x - ttl_value))
+            index = self.ttl_input.findData(closest_ttl)
+            
+        self.ttl_input.setCurrentIndex(max(0, index))
         
         # Set window title to indicate edit mode
+        # Always use the original record type (without description) from the record data
         self.setWindowTitle(f"Edit {self.record.get('type', '')} Record")
         
         # Set record content
@@ -688,12 +1119,17 @@ class RecordDialog(QtWidgets.QDialog):
     def update_record_type_guidance(self, index):
         """Update guidance text based on selected record type."""
         record_type = self.type_combo.currentText()
+        
+        # Extract just the record type without description
+        if ' (' in record_type:
+            record_type = record_type.split(' (')[0]
+            
         if record_type in RecordWidget.RECORD_TYPE_GUIDANCE:
             guidance = RecordWidget.RECORD_TYPE_GUIDANCE[record_type]
             self.guidance_text.setText(
-                f"<b>{record_type} Record:</b> {guidance['tooltip']}\n\n" +
-                f"<b>Format:</b> {guidance['format']}\n" +
-                f"<b>Example:</b> {guidance['example']}"
+                f"<b>{record_type} Record:</b><br>{guidance['tooltip']}<br><br>" +
+                f"<b>Format:</b><br>{guidance['format']}<br><br>" +
+                f"<b>Example:</b><br>{guidance['example']}"
             )
             self.guidance_text.setStyleSheet(
                 "background-color: #f0f4f8; padding: 10px; border-radius: 5px; margin-bottom: 10px;"
@@ -724,6 +1160,10 @@ class RecordDialog(QtWidgets.QDialog):
         if not content.strip():
             return False, "Record content cannot be empty"
             
+        # Extract just the record type without description
+        if ' (' in record_type:
+            record_type = record_type.split(' (')[0]
+            
         # Check if we have regex validation defined for this record type
         validation_pattern = None
         if record_type in RecordWidget.RECORD_TYPE_GUIDANCE:
@@ -734,7 +1174,10 @@ class RecordDialog(QtWidgets.QDialog):
             # TXT records should be enclosed in quotes
             if not (content.startswith('"') and content.endswith('"')):
                 return False, f"{record_type} records must be enclosed in double quotes (e.g., \"v=spf1 -all\")"
-            
+            # Check for proper escaping of quotes within the content
+            if '\"' not in content and content.count('"') > 2:
+                return False, f"Quotes within {record_type} content must be escaped with backslash (e.g., \"Example with \\\"quoted\\\" text\")"
+                
         elif record_type in ['CNAME', 'MX', 'NS', 'PTR', 'DNAME']:
             # Check for trailing dots on domains
             if not content.strip().endswith('.'):
@@ -798,6 +1241,11 @@ class RecordDialog(QtWidgets.QDialog):
             bool: True if valid, False otherwise
         """
         record_type = self.type_combo.currentText()
+        
+        # Extract just the record type without description
+        if ' (' in record_type:
+            record_type = record_type.split(' (')[0]
+            
         content = content if content is not None else self.records_input.toPlainText().strip()
             
         # If there's no content, clear validation status
@@ -855,7 +1303,13 @@ class RecordDialog(QtWidgets.QDialog):
         """Process the dialog data when the user clicks OK."""
         subname = self.subname_input.text().strip()
         record_type = self.type_combo.currentText().strip()
-        ttl = int(self.ttl_input.text()) if self.ttl_input.text().isdigit() else 3600
+        
+        # Extract just the record type without description
+        if ' (' in record_type:
+            record_type = record_type.split(' (')[0]
+        
+        # Get the TTL value from the combo box's current data
+        ttl = self.ttl_input.currentData()
         content = self.records_input.toPlainText().strip()
         
         # Parse multi-line content into a list of records
@@ -909,13 +1363,23 @@ class RecordDialog(QtWidgets.QDialog):
             if self.record:
                 old_records = "\n".join(self.record.get('records', ['<empty>']))
                 new_records = "\n".join(records)
-                self.log_signal.emit(f"Successfully {operation_type} {record_details} - changed content from '{old_records}' to '{new_records}'", "success")
+                old_ttl = self.record.get('ttl', 0)
+                self.log_signal.emit(f"Successfully {operation_type} {record_details} - TTL: {ttl} - changed content from '{old_records}' to '{new_records}'", "success")
             else:
                 # For new records, just show the new values
                 content_summary = "\n".join(records)
-                self.log_signal.emit(f"Successfully {operation_type} {record_details} with content: {content_summary}", "success")
+                self.log_signal.emit(f"Successfully {operation_type} {record_details} with TTL: {ttl}, content: {content_summary}", "success")
                 
+            # First accept the dialog to close it properly
             super(RecordDialog, self).accept()
+            
+            # Then trigger a refresh through the parent if possible
+            if hasattr(self.parent, 'records_changed') and self.parent is not None:
+                # Clear any cached data for the domain to ensure we get fresh data
+                if hasattr(self.parent, 'cache_manager') and hasattr(self.parent, 'current_domain'):
+                    self.parent.cache_manager.clear_domain_cache(self.parent.current_domain)
+                # Signal that records have changed
+                self.parent.records_changed.emit()
         else:
             # Handle the updated error response format
             if isinstance(response, dict) and 'message' in response:

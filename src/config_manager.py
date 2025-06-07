@@ -28,8 +28,13 @@ class ConfigManager:
         self._config = {
             "api_url": self.DEFAULT_API_URL,
             "auth_token": "",
-            "sync_interval_minutes": 5,
-            "debug_mode": False
+            "sync_interval_minutes": 10,  # Default sync interval in minutes
+            "debug_mode": False,
+            "show_log_console": True,  # Default to showing log console
+            "keepalive_interval": 60,  # Default keepalive check interval in seconds
+            "offline_mode": False,  # Default to online mode
+            "show_multiline_records": True,  # Default to full display of multiline records
+            "api_throttle_seconds": 2  # Default delay between API requests to avoid rate limiting
         }
         self._ensure_config_dir_exists()
         self._load_config()
@@ -92,6 +97,7 @@ class ConfigManager:
                     stored_config['auth_token'] = self._decrypt_token(stored_config['encrypted_auth_token'])
                     del stored_config['encrypted_auth_token']
                     
+                # Only update with explicitly set values
                 self._config.update(stored_config)
                 logger.info("Configuration loaded successfully")
             except (json.JSONDecodeError, IOError) as e:
@@ -145,7 +151,77 @@ class ConfigManager:
     def get_debug_mode(self):
         """Get debug mode status."""
         return self._config["debug_mode"]
+        
+    def get_show_log_console(self):
+        """Get log console visibility preference."""
+        return self._config.get("show_log_console", False)  # Default to hidden if not set
+    
+    def set_show_log_console(self, show):
+        """Set log console visibility preference.
+        
+        Args:
+            show (bool): Whether to show the log console
+        """
+        self._config["show_log_console"] = show
     
     def set_debug_mode(self, enabled):
         """Set debug mode status."""
         self._config["debug_mode"] = enabled
+        
+    def get_keepalive_interval(self):
+        """Get the keepalive check interval in seconds."""
+        return self._config.get("keepalive_interval", 60)  # Default to 60 seconds
+    
+    def set_keepalive_interval(self, seconds):
+        """Set the keepalive check interval in seconds.
+        
+        Args:
+            seconds (int): Interval in seconds between keepalive checks
+        """
+        self._config["keepalive_interval"] = seconds
+        
+    def get_offline_mode(self):
+        """Get offline mode status."""
+        return self._config.get("offline_mode", False)  # Default to online mode
+    
+    def set_offline_mode(self, enabled):
+        """Set offline mode status.
+        
+        Args:
+            enabled (bool): Whether offline mode is enabled
+        """
+        if enabled:
+            # Only add to config when explicitly enabled
+            self._config["offline_mode"] = True
+        else:
+            # Remove from config when disabled, so default (False) applies
+            if "offline_mode" in self._config:
+                del self._config["offline_mode"]
+        
+    def get_show_multiline_records(self):
+        """Get multiline records display status."""
+        return self._config.get("show_multiline_records", True)  # Default to full display
+    
+    def set_show_multiline_records(self, enabled):
+        """Set multiline records display status.
+        
+        Args:
+            enabled (bool): Whether to show multiline records in full
+        """
+        self._config["show_multiline_records"] = enabled
+        
+    def get_api_throttle_seconds(self):
+        """Get the API request throttling delay in seconds.
+        
+        Returns:
+            float: The delay between API requests in seconds
+        """
+        return self._config.get("api_throttle_seconds", 2.0)  # Default to 2 seconds
+    
+    def set_api_throttle_seconds(self, seconds):
+        """Set the API request throttling delay in seconds.
+        
+        Args:
+            seconds (float): Delay between API requests in seconds
+        """
+        self._config["api_throttle_seconds"] = seconds

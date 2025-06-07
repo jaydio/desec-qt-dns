@@ -25,12 +25,7 @@ The `APIClient` class provides:
 
 ### 3. Cache System
 
-The `CacheManager` class implements:
-
-- File-based caching of API responses
-- Support for offline mode operations
-- Cache invalidation based on sync intervals
-- Per-domain record caching
+The `CacheManager` class implements a multi-layered caching system. For detailed information, refer to [CACHING.md](./CACHING.md).
 
 ### 4. UI Components
 
@@ -95,7 +90,7 @@ The `CacheManager` class implements:
 
 3. **Proxy Pattern**
    - Cache manager acts as a proxy for API data
-   - Transparently serves data from cache when offline
+   - Transparently serves data from different cache layers or API
 
 ## Security Considerations
 

@@ -14,7 +14,7 @@ from PyQt6.QtCore import Qt
 logger = logging.getLogger(__name__)
 
 class LogWidget(QtWidgets.QWidget):
-    """Widget for displaying application logs."""
+    """Widget for displaying application logs with collapsibility support."""
     
     # Define colors for different log levels
     LOG_COLORS = {
@@ -41,17 +41,23 @@ class LogWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Header with title and clear button
+        # Header with title and buttons
         header_layout = QtWidgets.QHBoxLayout()
         
         title = QtWidgets.QLabel("Log Console")
         title.setStyleSheet("font-weight: bold;")
         header_layout.addWidget(title)
         
+        # Add message count label
+        self.count_label = QtWidgets.QLabel("0 messages")
+        self.count_label.setStyleSheet("color: #666; font-size: 11px;")
+        header_layout.addWidget(self.count_label)
+        
         header_layout.addStretch()
         
-        clear_btn = QtWidgets.QPushButton("Clear Log")
-        clear_btn.setFixedSize(80, 25)
+        # Clear log button
+        clear_btn = QtWidgets.QPushButton("Clear")
+        clear_btn.setFixedSize(50, 25)
         clear_btn.clicked.connect(self.clear_log)
         header_layout.addWidget(clear_btn)
         
@@ -100,8 +106,15 @@ class LogWidget(QtWidgets.QWidget):
         # Ensure the latest entry is visible
         scroll_bar = self.log_text.verticalScrollBar()
         scroll_bar.setValue(scroll_bar.maximum())
+        
+        # Update message count
+        count = self.log_text.document().blockCount()
+        self.count_label.setText(f"{count} {'messages' if count != 1 else 'message'}")
     
+
+        
     def clear_log(self):
         """Clear the log contents."""
         self.log_text.clear()
         self.add_message("Log cleared", "info")
+        self.count_label.setText("1 message")

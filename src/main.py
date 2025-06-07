@@ -9,6 +9,7 @@ Sets up the application, initializes components, and launches the UI.
 import sys
 import os
 import logging
+import time
 from PyQt6 import QtGui, QtCore, QtWidgets
 
 # Import local modules

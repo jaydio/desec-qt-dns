@@ -30,8 +30,9 @@ The application uses file-based caching with the following characteristics:
 * Cache directory: `~/.config/desecqt/cache`
 * Cache is enabled by default
 * Cache staleness is determined by the sync interval
-* Zone data is cached in `~/.config/desecqt/cache/zones.json` 
-* Record data is cached in domain-specific files like `~/.config/desecqt/cache/records_example_com.json`
+* Zone data is cached in `~/.config/desecqt/cache/zones.json` and in faster binary format as `zones.pkl`
+* Record data is cached in domain-specific files like `~/.config/desecqt/cache/records_example_com.json` and in faster binary format
+* O(1) in-memory indexing for both zones and records provides lightning-fast access
 
 ## Sample Configuration
 

@@ -3,14 +3,107 @@
 
 """
 Zone List Widget for deSEC Qt DNS Manager.
-Displays and manages DNS zones.
+Displays and manages DNS zones with optimized performance.
 """
 
 import logging
+from typing import List, Dict, Any, Tuple, Optional, Callable, Union
+
 from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QThreadPool, QObject
+
+from workers import LoadZonesWorker
 
 logger = logging.getLogger(__name__)
+
+# Custom model for the zones list
+class ZoneListModel(QtCore.QAbstractListModel):
+    """Custom model for efficiently displaying zone data."""
+    
+    def __init__(self, zones: Optional[List[Dict[str, Any]]] = None):
+        """Initialize the model with zone data.
+        
+        Args:
+            zones: Optional list of zone dictionaries
+        """
+        super().__init__()
+        self.zones = zones or []
+        self.filtered_zones: List[Dict[str, Any]] = []
+        self.filter_text = ""
+        # Cache for zone name lookups to avoid repetitive dictionary access
+        self._zone_name_cache: Dict[int, str] = {}
+        # Apply initial filtering
+        self.apply_filter()
+        
+    def rowCount(self, parent=QtCore.QModelIndex()) -> int:
+        """Return the number of rows in the model."""
+        return len(self.filtered_zones)
+        
+    def data(self, index: QtCore.QModelIndex, role: int) -> Any:
+        """Return data for the specified index and role."""
+        if not index.isValid() or index.row() >= len(self.filtered_zones):
+            return None
+            
+        row = index.row()
+        
+        if role == Qt.ItemDataRole.DisplayRole:
+            # Use cached zone name if available to avoid repeated dictionary lookups
+            if row not in self._zone_name_cache:
+                self._zone_name_cache[row] = self.filtered_zones[row].get('name', '')
+            return self._zone_name_cache[row]
+        elif role == Qt.ItemDataRole.UserRole:
+            return self.filtered_zones[row]
+            
+        return None
+    
+    def update_zones(self, zones: List[Dict[str, Any]]) -> None:
+        """Update the model with new zone data.
+        
+        Args:
+            zones: List of zone dictionaries
+        """
+        self.beginResetModel()
+        self.zones = zones
+        # Clear the zone name cache when updating zones
+        self._zone_name_cache.clear()
+        self.apply_filter()
+        self.endResetModel()
+    
+    def apply_filter(self) -> None:
+        """Apply current filter to the zone list."""
+        if self.filter_text:
+            # Convert filter text to lowercase once for efficiency
+            filter_lower = self.filter_text.lower()
+            
+            # Use list comprehension for better performance
+            self.filtered_zones = [
+                zone for zone in self.zones
+                if filter_lower in zone.get('name', '').lower()
+            ]
+        else:
+            # Avoid unnecessary list copy when no filter is applied
+            self.filtered_zones = self.zones
+        
+        # Clear the zone name cache when filter changes
+        self._zone_name_cache.clear()
+            
+    def set_filter(self, filter_text: str) -> bool:
+        """Set a new filter and apply it to the model.
+        
+        Args:
+            filter_text: Text to filter zone names by
+            
+        Returns:
+            True if filter changed, False otherwise
+        """
+        if self.filter_text == filter_text:
+            return False  # No change
+            
+        self.filter_text = filter_text
+        self.beginResetModel()
+        self.apply_filter()
+        self.endResetModel()
+        return True  # Filter changed
 
 class ZoneListWidget(QtWidgets.QWidget):
     """Widget for displaying and managing DNS zones."""
@@ -35,83 +128,173 @@ class ZoneListWidget(QtWidgets.QWidget):
         self.api_client = api_client
         self.cache_manager = cache_manager
         self.zones = []
-        self.filtered_zones = []
-        self.filter_text = ""
+        self.thread_pool = QThreadPool.globalInstance()
+        self.loading_indicator = None
         
         # Set up the UI
         self.setup_ui()
     
     def setup_ui(self):
         """Set up the user interface."""
+        # Main layout
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)  # Standard 6px margin
+        layout.setSpacing(6)  # Standard 6px spacing
         
-        # Title
+        # Header section - title, count and search field
+        header_layout = QtWidgets.QVBoxLayout()
+        header_layout.setSpacing(6)  # Consistent spacing
+        
+        # Title and count
+        title_layout = QtWidgets.QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        
         title = QtWidgets.QLabel("DNS Zones")
-        title.setStyleSheet("font-weight: bold; font-size: 14px;")
-        layout.addWidget(title)
+        title.setStyleSheet("font-weight: bold;")
+        title.setMinimumWidth(100)  # Fixed width for right alignment
+        title_layout.addWidget(title)
         
-        # Zone list
-        self.zone_list = QtWidgets.QListWidget()
-        self.zone_list.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
-        self.zone_list.itemSelectionChanged.connect(self.on_zone_selection_changed)
-        layout.addWidget(self.zone_list)
-    
-    def load_zones(self):
-        """Load zones from the API or cache."""
-        if self.api_client.is_online:
-            # Online mode - get zones from API
-            success, response = self.api_client.get_zones()
-            
-            if success:
-                self.zones = response
-                self.cache_manager.cache_zones(self.zones)
-                self.update_zone_list()
-            else:
-                self.log_message.emit(f"Failed to load zones: {response}", "error")
-                # Try to load from cache as fallback
-                self._load_from_cache()
-        else:
-            # Offline mode - get zones from cache
-            self._load_from_cache()
-    
-    def _load_from_cache(self):
-        """Load zones from cache."""
-        cached_zones, timestamp = self.cache_manager.get_cached_zones()
+        title_layout.addStretch()
         
+        self.zone_count_label = QtWidgets.QLabel("Total zones: 0")
+        title_layout.addWidget(self.zone_count_label)
+        
+        header_layout.addLayout(title_layout)
+        
+        # Search field (match spacing with Record widget)
+        search_layout = QtWidgets.QHBoxLayout()
+        search_layout.setContentsMargins(0, 6, 0, 6)  # Add vertical padding
+        
+        search_label = QtWidgets.QLabel("Search:")
+        search_label.setMinimumWidth(50)  # Fixed width for right alignment
+        search_layout.addWidget(search_label)
+        
+        self.search_field = QtWidgets.QLineEdit()
+        self.search_field.setFixedHeight(25)  # Consistent height with record widget
+        self.search_field.setPlaceholderText("Type to filter zones...")
+        self.search_field.textChanged.connect(self.filter_zones)
+        search_layout.addWidget(self.search_field)
+        
+        header_layout.addLayout(search_layout)
+        
+        # Add header layout to main layout
+        layout.addLayout(header_layout)
+        
+        # We don't need a loading indicator here as we use the status bar instead
+        
+        # Use model-view architecture for better performance
+        self.zone_model = ZoneListModel()
+        self.zone_list_view = QtWidgets.QListView()
+        self.zone_list_view.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.zone_list_view.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.zone_list_view.setAlternatingRowColors(True)
+        self.zone_list_view.setUniformItemSizes(True)
+        self.zone_list_view.setStyleSheet(
+            "QListView { border: 1px solid #ccc; }"
+            "QListView::item { padding: 5px; }"
+            "QListView::item:selected { background-color: #3daee9; color: white; }"
+        )
+        
+        # Set the model for the view
+        self.zone_list_view.setModel(self.zone_model)
+        
+        # Connect selection changed signal
+        self.zone_list_view.selectionModel().currentChanged.connect(self.on_zone_selection_changed)
+        
+        # Add some vertical stretch to push buttons to the bottom
+        layout.addWidget(self.zone_list_view, 1)  # Give stretch factor
+        
+        # Add action buttons (matching the style of record widget)
+        actions_layout = QtWidgets.QHBoxLayout()
+        actions_layout.setContentsMargins(0, 6, 0, 0)  # Add top margin for spacing
+        
+        # Store references to buttons to enable/disable in offline mode
+        self.add_zone_btn = QtWidgets.QPushButton("Add Zone")
+        self.add_zone_btn.clicked.connect(self.show_add_zone_dialog)
+        actions_layout.addWidget(self.add_zone_btn)
+        
+        self.delete_zone_btn = QtWidgets.QPushButton("Delete Zone")
+        self.delete_zone_btn.clicked.connect(self.delete_selected_zone)
+        actions_layout.addWidget(self.delete_zone_btn)
+        
+        # Add spacer to push buttons to the left (same as record widget)
+        actions_layout.addStretch()
+        
+        layout.addLayout(actions_layout)
+    
+    def load_zones(self, completion_callback=None):
+        """Load zones from API or cache in the background.
+        
+        Args:
+            completion_callback: Optional callback function that will be called when
+                                zone loading is complete with parameters (success, zones, message)
+        """
+        # Get cached zones immediately 
+        cached_zones, _ = self.cache_manager.get_cached_zones()
         if cached_zones is not None:
-            self.zones = cached_zones
-            self.update_zone_list()
-            self.log_message.emit(f"Loaded {len(cached_zones)} zones from cache", "info")
-        else:
-            self.log_message.emit("No cached zones available", "warning")
-            self.zones = []
-            self.update_zone_list()
+            self.zone_model.update_zones(cached_zones)
+            # Update the zone count
+            self.zone_count_label.setText(f"Total zones: {len(cached_zones)}")
+        
+        # Then fetch fresh data in the background
+        worker = LoadZonesWorker(self.api_client, self.cache_manager)
+        worker.signals.finished.connect(self.handle_zones_result)
+        
+        # Connect completion callback if provided
+        if completion_callback:
+            worker.signals.finished.connect(completion_callback)
+            
+        # Start the worker thread
+        self.thread_pool.start(worker)
     
-    def update_zone_list(self):
-        """Update the zone list with current zones (applying filtering if needed)."""
-        self.zone_list.clear()
+    def handle_zones_result(self, success, zones, message):
+        """
+        Handle the worker result.
         
-        # Apply filter
-        if self.filter_text:
-            self.filtered_zones = [
-                zone for zone in self.zones
-                if self.filter_text.lower() in zone.get('name', '').lower()
-            ]
-        else:
-            self.filtered_zones = self.zones
+        Args:
+            success (bool): Whether the operation was successful
+            zones (list): List of zone dictionaries
+            message (str): Message from the worker
+        """
+        if zones is not None:
+            # Check if zones data has actually changed to avoid unnecessary updates
+            current_zones = self.zone_model.zones
+            if not self._zones_equal(current_zones, zones):
+                self.zone_model.update_zones(zones)
+            else:
+                # Even if zones didn't change, ensure count is updated
+                filtered = self.zone_model.rowCount()
+                
+            # Update the zone count
+            total = len(zones) 
+            filtered = self.zone_model.rowCount()
+            
+            # Update zone count with optimized text setting (only when different)
+            new_text = f"Showing {filtered} of {total} zones" if self.search_field.text() else f"Total zones: {total}"
+            if self.zone_count_label.text() != new_text:
+                self.zone_count_label.setText(new_text)
+            
+            # If we have a selection already, maintain it
+            selected_indices = self.zone_list_view.selectedIndexes()
+            if selected_indices and selected_indices[0].isValid():
+                self.on_zone_selection_changed()
         
-        # Add zones to the list
-        for zone in self.filtered_zones:
-            name = zone.get('name', '')
-            item = QtWidgets.QListWidgetItem(name)
-            item.setData(Qt.ItemDataRole.UserRole, zone)
-            self.zone_list.addItem(item)
+        # Show error message if operation failed
+        if not success and message:
+            self.log_message.emit(message, "error")
+            
+    def _zones_equal(self, zones1, zones2):
+        """Compare two zone lists to see if they're effectively the same."""
+        if zones1 is None or zones2 is None:
+            return zones1 is zones2
         
-        # Update status
-        count = len(self.filtered_zones)
-        total = len(self.zones)
-        if self.filter_text and count < total:
-            self.log_message.emit(f"Showing {count} of {total} zones", "info")
+        if len(zones1) != len(zones2):
+            return False
+        
+        # Compare using sets of zone names for faster comparison
+        names1 = {zone.get('name', '') for zone in zones1}
+        names2 = {zone.get('name', '') for zone in zones2}
+        return names1 == names2
     
     def filter_zones(self, filter_text):
         """
@@ -120,18 +303,35 @@ class ZoneListWidget(QtWidgets.QWidget):
         Args:
             filter_text (str): Text to filter by
         """
-        self.filter_text = filter_text
-        self.update_zone_list()
-    
-    def on_zone_selection_changed(self):
-        """Handle zone selection change."""
-        selected_items = self.zone_list.selectedItems()
-        
-        if not selected_items:
-            return
+        if self.zone_model.set_filter(filter_text):
+            # Update the status label instead of logging
+            count = self.zone_model.rowCount()
+            total = len(self.zone_model.zones)
             
-        zone_item = selected_items[0]
-        zone_name = zone_item.text()
+            if filter_text:
+                self.zone_count_label.setText(f"Showing {count} of {total} zones")
+            else:
+                self.zone_count_label.setText(f"Total zones: {total}")
+    
+    def on_zone_selection_changed(self, index: Optional[QtCore.QModelIndex] = None) -> None:
+        """Handle zone selection change with optimized performance.
+        
+        Args:
+            index: The model index that was selected
+        """
+        # Get selection if not provided
+        if index is None:
+            indices = self.zone_list_view.selectedIndexes()
+            if not indices:
+                return
+            index = indices[0]
+            
+        if not index.isValid():
+            return
+        
+        # Get zone data from model - this is now optimized with our caching improvements
+        zone = self.zone_model.data(index, Qt.ItemDataRole.UserRole)
+        zone_name = zone.get('name', '')
         
         # Emit signal with selected zone name
         self.zone_selected.emit(zone_name)
@@ -143,14 +343,14 @@ class ZoneListWidget(QtWidgets.QWidget):
         Returns:
             tuple: (zone_name, zone_data) or (None, None) if no zone is selected
         """
-        selected_items = self.zone_list.selectedItems()
+        indices = self.zone_list_view.selectedIndexes()
         
-        if not selected_items:
+        if not indices or not indices[0].isValid():
             return None, None
             
-        zone_item = selected_items[0]
-        zone_name = zone_item.text()
-        zone_data = zone_item.data(Qt.ItemDataRole.UserRole)
+        index = indices[0]
+        zone_data = self.zone_model.data(index, Qt.ItemDataRole.UserRole)
+        zone_name = zone_data.get('name', '')
         
         return zone_name, zone_data
     
@@ -245,19 +445,40 @@ class ZoneListWidget(QtWidgets.QWidget):
         if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
             self.delete_zone(zone_name)
     
-    def delete_zone(self, zone_name):
-        """
-        Delete a zone.
+    def set_edit_enabled(self, enabled):
+        """Enable or disable zone editing controls based on online mode.
         
         Args:
-            zone_name (str): Zone name to delete
+            enabled (bool): Whether editing is enabled
         """
-        if not self.api_client.is_online:
-            self.log_message.emit("Cannot delete zone in offline mode", "warning")
-            return
-            
-        self.log_message.emit(f"Deleting zone {zone_name}...", "info")
+        # Enable/disable add zone button
+        if hasattr(self, 'add_zone_btn'):
+            self.add_zone_btn.setEnabled(enabled)
+            # Update the tooltip to explain why it's disabled
+            if not enabled:
+                self.add_zone_btn.setToolTip("Adding zones is disabled in offline mode")
+            else:
+                self.add_zone_btn.setToolTip("Add a new DNS zone")
         
+        # Enable/disable delete zone button
+        if hasattr(self, 'delete_zone_btn'):
+            self.delete_zone_btn.setEnabled(enabled)
+            # Update the tooltip to explain why it's disabled
+            if not enabled:
+                self.delete_zone_btn.setToolTip("Deleting zones is disabled in offline mode")
+            else:
+                self.delete_zone_btn.setToolTip("Delete the selected zone")
+                
+    def delete_zone(self, zone_name):
+        """Delete a zone.
+        
+        Args:
+            zone_name (str): The name of the zone to delete
+        """
+        # Log the attempt
+        self.log_message.emit(f"Deleting zone: {zone_name}", "info")
+        
+        # Try to delete the zone
         success, response = self.api_client.delete_zone(zone_name)
         
         if success:
