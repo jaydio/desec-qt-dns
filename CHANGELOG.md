@@ -5,6 +5,26 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-beta] - 2025-06-08
+
+### Added in 0.3.0-beta
+
+- Made multiline DNS records the default display mode for better readability
+
+### Fixed in 0.3.0-beta
+
+- Fixed application crashes caused by pressing the Delete key on zones and records
+- Fixed Ctrl+F shortcut to cycle correctly between zone and record search fields
+- Fixed Escape key behavior to clear only the currently focused search field
+- Fixed log console to appear within the main window instead of as a separate window
+- Fixed connection status to show OFFLINE at startup when offline mode is enabled
+
+### Changed in 0.3.0-beta
+
+- Renamed DNS Records label to "DNS Records (RRsets)" for technical accuracy
+- Hidden log console by default for new users and during initial setup
+- Disabled (grayed out) Add Zone and Delete Zone buttons in offline mode
+
 ## [0.2.1] - 2025-06-07
 
 ### Fixed in 0.2.1
