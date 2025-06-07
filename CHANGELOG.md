@@ -5,6 +5,15 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2-beta] - 2025-06-08
+
+### Added in 0.3.2-beta
+
+- Added Changelog to Help menu as separate menu item for improved accessibility
+- Added automatic cache clearing when API token is changed for enhanced security
+- Added log file purging when API token is changed to prevent information leakage
+- Updated README with complete feature list
+
 ## [0.3.1-beta] - 2025-06-08
 
 ### Added in 0.3.1-beta

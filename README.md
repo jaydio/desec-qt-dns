@@ -14,9 +14,17 @@ A Qt6 desktop application for managing DNS zones and records using the deSEC DNS
 - Support for the following resource record types: ```A, AAAA, AFSDB, APL, CAA, CDNSKEY, CDS, CERT, CNAME, DHCID, DNAME, DNSKEY, DLV, DS, EUI48, EUI64, HINFO, HTTPS, KX, L32, L64, LOC, LP, MX, NAPTR, NID, NS, OPENPGPKEY, PTR, RP, SMIMEA, SPF, SRV, SSHFP, SVCB, TLSA, TXT, URI```
 - Record-specific TTL management
 - Data caching for offline access
+- Clear Cache functionality to refresh data
 - Two-pane layout for easy navigation
 - Configuration editor for API settings
 - Performance-optimized with indexed lookups
+- Full keyboard navigation with shortcuts
+- DNS record table sorting by clicking column headers
+- Double-click to edit records
+- Multiline DNS records display for better readability
+- Integrated log console within the main window
+- Offline mode with visual indicators
+- Elapsed time display since last sync
 
 ## Limitations
 
@@ -88,3 +96,4 @@ Detailed documentation is available in the `doc/` directory:
 ## License
 
 This project is open source software licensed under the MIT License.
+

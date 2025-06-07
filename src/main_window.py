@@ -7,6 +7,7 @@ Implements the two-pane layout and coordinates between UI components.
 """
 
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Callable, Union
@@ -198,6 +199,12 @@ class MainWindow(QtWidgets.QMainWindow):
         config_action.triggered.connect(self.show_config_dialog)
         file_menu.addAction(config_action)
         
+        # Clear Cache menu item
+        clear_cache_action = QtGui.QAction("Clear &Cache", self)
+        clear_cache_action.setStatusTip("Clear all cached data and initiate a new sync")
+        clear_cache_action.triggered.connect(self.clear_cache)
+        file_menu.addAction(clear_cache_action)
+        
         file_menu.addSeparator()
         
         # Exit menu item
@@ -248,9 +255,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.show_log_console_action.triggered.connect(self.toggle_log_console)
         view_menu.addAction(self.show_log_console_action)
         
-        # Add a separator
-        view_menu.addSeparator()
-        
         # Multiline records display toggle
         self.show_multiline_records_action = QtGui.QAction("Show &Multiline Records", self)
         self.show_multiline_records_action.setStatusTip("Display multiline record content in full")
@@ -260,8 +264,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.show_multiline_records_action.triggered.connect(self.toggle_multiline_records)
         view_menu.addAction(self.show_multiline_records_action)
         
+        # Add a separator
+        view_menu.addSeparator()
+        
         # Help menu
         help_menu = self.menuBar().addMenu("&Help")
+        
+        # Changelog menu item
+        changelog_action = QtGui.QAction("&Changelog", self)
+        changelog_action.setStatusTip("View the application changelog")
+        changelog_action.triggered.connect(self.show_changelog)
+        help_menu.addAction(changelog_action)
+        
+        # Add separator
+        help_menu.addSeparator()
         
         # About menu item
         about_action = QtGui.QAction("&About", self)
@@ -557,11 +573,51 @@ class MainWindow(QtWidgets.QMainWindow):
         # Refresh the currently selected zone's records
         self.record_widget.refresh_records()
     
+    def purge_log_file(self):
+        """Purge the log file for security reasons when token is changed."""
+        try:
+            # Get the log file path
+            log_dir = os.path.expanduser("~/.config/desecqt/logs")
+            log_file = os.path.join(log_dir, "desecqt.log")
+            
+            # Check if file exists before attempting to delete
+            if os.path.exists(log_file):
+                # Open and truncate the file rather than deleting it
+                # This preserves file permissions and handles if the file is in use
+                with open(log_file, 'w') as f:
+                    # Truncate to zero length
+                    pass
+                
+                return True
+            else:
+                # File doesn't exist, nothing to purge
+                return True
+        except Exception as e:
+            logger.warning(f"Failed to purge log file: {str(e)}")
+            return False
+
     def show_auth_dialog(self):
         """Show the authentication dialog to get the API token."""
         dialog = AuthDialog(self.config_manager, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            # Token was set, initialize API client
+            # Token was set, clear the cache to ensure security
+            self.log_message("API token changed. Clearing cache and logs for security reasons...", "info")
+            
+            # Clear cache
+            cache_success = self.cache_manager.clear_all_cache()
+            if cache_success:
+                self.log_message("Cache cleared successfully", "success")
+            else:
+                self.log_message("Failed to clear cache completely. Some files may remain.", "warning")
+            
+            # Purge log file
+            log_success = self.purge_log_file()
+            if log_success:
+                self.log_message("Log file purged successfully", "success")
+            else:
+                self.log_message("Failed to purge log file", "warning")
+            
+            # Initialize API client
             self.api_client.check_connectivity()
             self.sync_data()
         else:
@@ -660,6 +716,12 @@ class MainWindow(QtWidgets.QMainWindow):
         logger.debug(f"Multiline record display set to {mode} mode")
         self.statusBar().showMessage(f"Multiline record display: {mode.capitalize()} mode", 3000)
     
+    def show_changelog(self):
+        """Open the changelog in the default web browser."""
+        changelog_url = "https://github.com/jaydio/desec-qt-dns/blob/master/CHANGELOG.md"
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(changelog_url))
+        self.log_message(f"Opening changelog in web browser: {changelog_url}", "info")
+
     def show_about(self):
         """Show the about dialog."""
         about_text = (
@@ -669,8 +731,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "<h2 align=\"center\">deSEC Qt DNS Manager</h2>"
             "<p align=\"center\">A desktop application for managing DNS zones and records<br/>"
             "using the deSEC API.</p>"
-            "<p align=\"center\"><b>Version 0.3.1-beta</b></p>"
-            "<p align=\"center\"><a href=\"https://github.com/jaydio/desec-qt-dns/blob/master/CHANGELOG.md\">View Changelog</a></p>"
+            "<p align=\"center\"><b>Version 0.3.2-beta</b></p>"
             "<hr/>"
             "<p align=\"center\">🚀 Developed by <b>JD Bungart</b></p>"
             "<p align=\"center\">✉️ <a href=\"mailto:me@jdneer.com\">me@jdneer.com</a></p>"
@@ -939,6 +1000,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
             # Delete the zone
             self.zone_list.delete_zone(zone_name)
+    
+    def clear_cache(self):
+        """Clear all cached data and initiate a new sync."""
+        # Show a confirmation dialog
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Cache Clear",
+            "Are you sure you want to clear all cached data? This will remove all local cache files and require a fresh sync.",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
+            # Clear the cache
+            success = self.cache_manager.clear_all_cache()
+            
+            if success:
+                self.log_message("Cache cleared successfully. Initiating new sync...", "success")
+                # Perform a new sync
+                self.sync_data()
+            else:
+                self.log_message("Failed to clear cache completely. Some files may remain.", "error")
     
     def closeEvent(self, event):
         """Handle window close event."""
