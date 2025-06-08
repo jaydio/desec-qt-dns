@@ -5,6 +5,23 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0-beta] - 2025-06-09
+
+### Added in 0.4.0-beta
+
+- Added dedicated Quit action to File menu with standard Ctrl+Q shortcut
+- Added Escape key support to clear active search filters
+- Added status bar messages for user actions
+
+### Improved in 0.4.0-beta
+
+- Enhanced menu item mnemonics for better keyboard navigation:
+  - "&Clear Cache" instead of "Clear &Cache" (Alt+F, C)
+  - "Show &Log Console" for consistency (Alt+V, L)
+  - "&Hotkeys" instead of "Keyboard Shortcuts" (Alt+H, H)
+- Reorganized Help menu for better flow and removed unnecessary separators
+- Improved visual feedback and consistency across UI elements
+
 ## [0.3.4-beta] - 2025-06-08
 
 ### Added in 0.3.4-beta

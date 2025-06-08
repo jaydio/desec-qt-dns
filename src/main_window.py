@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Optional, Callable, Union
 
 from PyQt6 import QtWidgets, QtCore, QtGui, uic
 from PyQt6.QtCore import Qt, QThreadPool, QTimer
+from PyQt6.QtWidgets import QMessageBox
 
 from workers import LoadRecordsWorker
 
@@ -204,10 +205,20 @@ class MainWindow(QtWidgets.QMainWindow):
         file_menu.addAction(config_action)
         
         # Clear Cache menu item
-        clear_cache_action = QtGui.QAction("Clear &Cache", self)
+        clear_cache_action = QtGui.QAction("&Clear Cache", self)
         clear_cache_action.setStatusTip("Clear all cached data and initiate a new sync")
         clear_cache_action.triggered.connect(self.clear_cache)
         file_menu.addAction(clear_cache_action)
+        
+        # Add separator
+        file_menu.addSeparator()
+        
+        # Quit action
+        quit_action = QtGui.QAction("&Quit", self)
+        quit_action.setShortcut("Ctrl+Q")
+        quit_action.setStatusTip("Quit the application")
+        quit_action.triggered.connect(self._confirm_quit_dialog)
+        file_menu.addAction(quit_action)
         
         # Connection menu
         connection_menu = menu_bar.addMenu("&Connection")
@@ -230,7 +241,7 @@ class MainWindow(QtWidgets.QMainWindow):
         view_menu = menu_bar.addMenu("&View")
         
         # Show log console action
-        self.toggle_log_action = QtGui.QAction("Show Log Console", self)
+        self.toggle_log_action = QtGui.QAction("Show &Log Console", self)
         self.toggle_log_action.setCheckable(True)
         self.toggle_log_action.setChecked(self.config_manager.get_show_log_console())
         self.toggle_log_action.triggered.connect(self.toggle_log_console)
@@ -257,9 +268,12 @@ class MainWindow(QtWidgets.QMainWindow):
         changelog_action.triggered.connect(self.show_changelog)
         help_menu.addAction(changelog_action)
         
-        # Add separator
-        help_menu.addSeparator()
-        
+        # Keyboard Shortcuts menu item
+        keyboard_shortcuts_action = QtGui.QAction("&Hotkeys", self)
+        keyboard_shortcuts_action.setStatusTip("View all keyboard shortcuts")
+        keyboard_shortcuts_action.triggered.connect(self.show_keyboard_shortcuts_dialog)
+        help_menu.addAction(keyboard_shortcuts_action)
+
         # About menu item
         about_action = QtGui.QAction("&About", self)
         about_action.setStatusTip("Show information about this application")
@@ -700,12 +714,6 @@ class MainWindow(QtWidgets.QMainWindow):
         logger.debug(f"Multiline record display set to {mode} mode")
         self.statusBar().showMessage(f"Multiline record display: {mode.capitalize()} mode", 3000)
     
-    def show_changelog(self):
-        """Open the changelog in the default web browser."""
-        changelog_url = "https://github.com/jaydio/desec-qt-dns/blob/master/CHANGELOG.md"
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl(changelog_url))
-        self.log_message(f"Opening changelog in web browser: {changelog_url}", "info")
-
     def show_about(self):
         """Show the about dialog."""
         about_text = (
@@ -715,7 +723,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "<h2 align=\"center\">deSEC Qt DNS Manager</h2>"
             "<p align=\"center\">A desktop application for managing DNS zones and records<br/>"
             "using the deSEC API.</p>"
-            "<p align=\"center\"><b>Version 0.3.4-beta</b></p>"
+            "<p align=\"center\"><b>Version 0.4.0-beta</b></p>"
             "<hr/>"
             "<p align=\"center\">🚀 Developed by <b>JD Bungart</b></p>"
             "<p align=\"center\">✉️ <a href=\"mailto:me@jdneer.com\">me@jdneer.com</a></p>"
@@ -762,6 +770,37 @@ class MainWindow(QtWidgets.QMainWindow):
         # Adjust dialog size to fit content after layout is set
         about_dialog.adjustSize()
         about_dialog.exec()
+    
+    def show_changelog(self):
+        """Show the changelog in the user's browser."""
+        changelog_url = "https://github.com/jaydio/desec-qt6-dns-manager/blob/main/CHANGELOG.md"
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(changelog_url))
+        self.log_message("Changelog opened in browser", "info")
+    
+    def show_keyboard_shortcuts_dialog(self):
+        """Show a dialog with keyboard shortcuts."""
+        shortcuts_text = (
+            "<html>"
+            "<head><style>body { font-family: sans-serif; margin: 15px; }</style></head>"
+            "<body>"
+            "<h2 align=\"center\">Keyboard Shortcuts</h2>"
+            "<p align=\"center\">Global shortcuts for deSEC Qt DNS Manager</p>"
+            "<hr/>"
+            "<table style=\"border-collapse: collapse; width: 100%;\">"
+            "<tr><th style=\"text-align: right; width: 10%; padding: 5px;\">Shortcut</th><th style=\"text-align: left; padding: 5px;\">&nbsp;</th><th style=\"text-align: left; padding: 5px;\">Action</th></tr>"
+            "<tr><td style=\"text-align: right; padding: 5px;\">F5</td><td style=\"padding: 5px;\">&nbsp;</td><td style=\"text-align: left; padding: 5px;\">Refresh/sync data</td></tr>"
+            "<tr><td style=\"text-align: right; padding: 5px;\">Ctrl+F</td><td style=\"padding: 5px;\">&nbsp;</td><td style=\"text-align: left; padding: 5px;\">Cycle through search filter fields</td></tr>"
+            "<tr><td style=\"text-align: right; padding: 5px;\">Ctrl+Q</td><td style=\"padding: 5px;\">&nbsp;</td><td style=\"text-align: left; padding: 5px;\">Quit application (with confirmation)</td></tr>"
+            "<tr><td style=\"text-align: right; padding: 5px;\">Delete</td><td style=\"padding: 5px;\">&nbsp;</td><td style=\"text-align: left; padding: 5px;\">Delete selected zone or record</td></tr>"
+            "<tr><td style=\"text-align: right; padding: 5px;\">Escape</td><td style=\"padding: 5px;\">&nbsp;</td><td style=\"text-align: left; padding: 5px;\">Clear active search filter</td></tr>"
+            "<tr><td style=\"text-align: right; padding: 5px;\">Ctrl+Enter</td><td style=\"padding: 5px;\">&nbsp;</td><td style=\"text-align: left; padding: 5px;\">Close record dialogs</td></tr>"
+            "</table>"
+            "<p>&nbsp;</p>"
+            "</body>"
+            "</html>"
+        )
+        
+        QMessageBox.information(self, "Keyboard Shortcuts", shortcuts_text)
     
     def update_elapsed_time(self):
         """Update the elapsed time display since last sync."""
@@ -843,27 +882,29 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sync_data()
             event.accept()
             return
-            
         # Ctrl+F to cycle through search filter fields
         if event.key() == Qt.Key.Key_F and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self._cycle_through_search_filters()
             event.accept()
             return
-            
+        # Ctrl+Q to quit (with confirmation)
+        if event.key() == Qt.Key.Key_Q and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self._confirm_quit_dialog()
+            event.accept()
+            return
         # Delete to delete selected item
         if event.key() == Qt.Key.Key_Delete:
             self._handle_delete_key()
             event.accept()
             return
-            
         # Escape to clear active search filter
         if event.key() == Qt.Key.Key_Escape:
             self._clear_active_search_filter()
             event.accept()
             return
-            
         # Pass event to parent for standard processing
         super(MainWindow, self).keyPressEvent(event)
+
     
     def _cycle_through_search_filters(self):
         """Cycle focus through available search filter fields."""
@@ -966,6 +1007,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 
         # Do NOT clear all filters if no filter had focus - this was causing the bug
         # Only clear the filter of the widget that actually has focus
+        
+        # Check if the record search field (right side, records_search_input) is focused
+        if hasattr(self, 'record_widget') and hasattr(self.record_widget, 'records_search_input'):
+            record_search_field = self.record_widget.records_search_input
+            if focused_widget == record_search_field:
+                # Clear the record search field
+                record_search_field.clear()
+                self.record_widget.filter_records("")  # Apply empty filter
+                cleared = True
+                self.statusBar().showMessage("Record search field cleared", 2000)
     
     def _confirm_delete_zone(self, zone_name):
         """Show confirmation dialog before deleting a zone.
@@ -985,6 +1036,20 @@ class MainWindow(QtWidgets.QMainWindow):
             # Delete the zone
             self.zone_list.delete_zone(zone_name)
     
+    def _confirm_quit_dialog(self):
+        """Show confirmation dialog before quitting."""
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Quit",
+            "Are you sure you want to quit?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
+            # Close the window
+            self.close()
+
     def clear_cache(self):
         """Clear all cached data and initiate a new sync."""
         # Show a confirmation dialog
@@ -999,14 +1064,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
             # Clear the cache
             success = self.cache_manager.clear_all_cache()
-            
             if success:
                 self.log_message("Cache cleared successfully. Initiating new sync...", "success")
                 # Perform a new sync
                 self.sync_data()
             else:
                 self.log_message("Failed to clear cache completely. Some files may remain.", "error")
-    
+
     def on_theme_type_changed(self, action):
         """Handle theme type change.
         
