@@ -15,10 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved in 0.4.0-beta
 
-- Enhanced menu item mnemonics for better keyboard navigation:
-  - "&Clear Cache" instead of "Clear &Cache" (Alt+F, C)
-  - "Show &Log Console" for consistency (Alt+V, L)
-  - "&Hotkeys" instead of "Keyboard Shortcuts" (Alt+H, H)
+- When in offline mode the add/edit/delete buttons are now grayed out even on startup
+- Enhanced menu item mnemonics for better keyboard navigation
 - Reorganized Help menu for better flow and removed unnecessary separators
 - Improved visual feedback and consistency across UI elements
 

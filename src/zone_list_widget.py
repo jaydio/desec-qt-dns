@@ -131,6 +131,7 @@ class ZoneListWidget(QtWidgets.QWidget):
         self.zones = []
         self.thread_pool = QThreadPool.globalInstance()
         self.loading_indicator = None
+        self._edit_enabled = True  # Default to enabled
         
         # Set up the UI
         self.setup_ui()
@@ -201,6 +202,9 @@ class ZoneListWidget(QtWidgets.QWidget):
         
         # Connect selection changed signal
         self.zone_list_view.selectionModel().currentChanged.connect(self.on_zone_selection_changed)
+        
+        # Connect double click signal
+        self.zone_list_view.doubleClicked.connect(self.on_zone_double_clicked)
         
         # Add some vertical stretch to push buttons to the bottom
         layout.addWidget(self.zone_list_view, 1)  # Give stretch factor
@@ -282,10 +286,11 @@ class ZoneListWidget(QtWidgets.QWidget):
             if self.zone_count_label.text() != new_text:
                 self.zone_count_label.setText(new_text)
             
-            # If we have a selection already, maintain it
+            # Always update edit buttons after zone list changes
+            self.set_edit_enabled(self._edit_enabled)
             selected_indices = self.zone_list_view.selectedIndexes()
             if selected_indices and selected_indices[0].isValid():
-                self.on_zone_selection_changed()
+                self.on_zone_selection_changed(selected_indices[0], None)
         
         # Show error message if operation failed
         if not success and message:
@@ -320,30 +325,22 @@ class ZoneListWidget(QtWidgets.QWidget):
                 self.zone_count_label.setText(f"Showing {count} of {total} zones")
             else:
                 self.zone_count_label.setText(f"Total zones: {total}")
+            self.set_edit_enabled(self._edit_enabled)
     
     def on_zone_selection_changed(self, current: QtCore.QModelIndex, previous: QtCore.QModelIndex) -> None:
         """Handler for zone selection changed event.
-        
         Args:
             current: Currently selected index
             previous: Previously selected index
         """
         if not current.isValid():
             return
-            
-        # Get the zone name from the model
         zone_name = self.zone_model.data(current, Qt.ItemDataRole.DisplayRole)
-        
-        # Log zone selection
         logger.debug(f"Zone selected: {zone_name}")
-        
-        # Update button states based on selection
-        has_selection = True  # We know we have a valid selection at this point
-        self.delete_zone_btn.setEnabled(has_selection)
-        self.validate_dnssec_btn.setEnabled(has_selection)
-        
-        # Emit signal with selected zone name
+        # Always update all edit buttons after selection changes
+        self.set_edit_enabled(self._edit_enabled)
         self.zone_selected.emit(zone_name)
+
     
     def get_selected_zone(self) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
         """Get the currently selected zone name and data."""
@@ -379,10 +376,10 @@ class ZoneListWidget(QtWidgets.QWidget):
     
     def show_add_zone_dialog(self):
         """Show dialog to add a new zone."""
-        if not self.api_client.is_online:
+        if not self._edit_enabled:
             self.log_message.emit("Cannot add zone in offline mode", "warning")
             return
-            
+
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Add Zone")
         dialog.setMinimumWidth(400)
@@ -425,14 +422,13 @@ class ZoneListWidget(QtWidgets.QWidget):
     def add_zone(self, zone_name):
         """
         Add a new zone.
-        
         Args:
             zone_name (str): Zone name to add
         """
-        if not self.api_client.is_online:
+        if not self._edit_enabled:
             self.log_message.emit("Cannot add zone in offline mode", "warning")
             return
-            
+
         self.log_message.emit(f"Adding zone {zone_name}...", "info")
         
         success, response = self.api_client.create_zone(zone_name)
@@ -445,10 +441,10 @@ class ZoneListWidget(QtWidgets.QWidget):
     
     def delete_selected_zone(self):
         """Delete the currently selected zone."""
-        if not self.api_client.is_online:
+        if not self._edit_enabled:
             self.log_message.emit("Cannot delete zone in offline mode", "warning")
             return
-            
+
         zone_name, _ = self.get_selected_zone()
         
         if not zone_name:
@@ -471,30 +467,41 @@ class ZoneListWidget(QtWidgets.QWidget):
     def set_edit_enabled(self, enabled: bool) -> None:
         """Enable or disable edit functionality."""
         has_selection = len(self.zone_list_view.selectedIndexes()) > 0
-        
-        # Enable/disable add zone button
+        self._edit_enabled = enabled
         if hasattr(self, 'add_zone_btn'):
             self.add_zone_btn.setEnabled(enabled)
-            # Update the tooltip to explain why it's disabled
             if not enabled:
                 self.add_zone_btn.setToolTip("Adding zones is disabled in offline mode")
             else:
                 self.add_zone_btn.setToolTip("")
-        
-        # Enable/disable delete zone button
         if hasattr(self, 'delete_zone_btn'):
             self.delete_zone_btn.setEnabled(enabled and has_selection)
-            # Update the tooltip to explain why it's disabled
             if not enabled:
                 self.delete_zone_btn.setToolTip("Deleting zones is disabled in offline mode")
+            elif not has_selection:
+                self.delete_zone_btn.setToolTip("Select a zone to delete")
             else:
                 self.delete_zone_btn.setToolTip("")
-                
-        # Enable/disable DNSSEC validation button - always available when zone selected
-        # regardless of online/offline status since it uses external browser
         if hasattr(self, 'validate_dnssec_btn'):
             self.validate_dnssec_btn.setEnabled(has_selection)
                 
+    def on_zone_double_clicked(self, index):
+        """Handle double click on a zone item.
+        
+        Args:
+            index (QModelIndex): The index that was double-clicked
+        """
+        # Only proceed if editing is enabled (not in offline mode)
+        if not self._edit_enabled:
+            self.log_message.emit("Editing zones is disabled in offline mode", "warning")
+            return
+            
+        # Get the zone name from the model
+        zone_name = self.zone_model.data(index, Qt.ItemDataRole.DisplayRole)
+        if zone_name:
+            # Emit the zone selected signal to trigger record loading
+            self.zone_selected.emit(zone_name)
+    
     def delete_zone(self, zone_name):
         """Delete a zone.
         

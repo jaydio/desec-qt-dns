@@ -12,6 +12,7 @@ A Qt6 desktop application for managing DNS zones and records using the deSEC DNS
 - Zone management (add, delete, list, search)
 - DNS record management (view, add, edit, delete)
 - Support for the following resource record types: ```A, AAAA, AFSDB, APL, CAA, CDNSKEY, CDS, CERT, CNAME, DHCID, DNAME, DNSKEY, DLV, DS, EUI48, EUI64, HINFO, HTTPS, KX, L32, L64, LOC, LP, MX, NAPTR, NID, NS, OPENPGPKEY, PTR, RP, SMIMEA, SPF, SRV, SSHFP, SVCB, TLSA, TXT, URI```
+- Reverse DNS Zone suppor
 - Record-specific TTL management
 - Data caching for offline access
 - Clear Cache functionality to refresh data
@@ -49,7 +50,7 @@ python -m venv venv
 # On Linux/macOS:
 source venv/bin/activate
 # On Windows:
-# venv\Scripts\activate
+venv\Scripts\activate
 ```
 
 ### 2. Install the Python dependencies

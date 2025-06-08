@@ -81,14 +81,18 @@ The application provides several types of notifications:
 
 All notifications are also written to the log file for reference.
 
-## Navigation Shortcuts
+### Keyboard Shortcuts
 
-The following keyboard shortcuts are available:
+The following keyboard shortcuts are available for record management:
 
-- **Ctrl+F**: Cycle and focus through search filter fields
-- **F5**: Refresh current view
-- **Escape**: Clear active search filter
-- **Delete**: Delete selected zone or record (with confirmation)
+- ```F5``` Refresh all data from the API
+- ```Delete``` Delete the currently selected record (with confirmation)
+- ```Ctrl+F``` Switch to zone search field
+- ```Escape``` Clear the current search filter
+- ```Ctrl+Enter``` Close the currently open record dialog
+- ```Ctrl+Q``` Close the application
+
+These shortcuts significantly improve workflow efficiency, especially when managing multiple records across different zones.
 
 ## Offline Mode
 
@@ -96,6 +100,7 @@ When operating offline:
 
 - The application will use cached data for both zones and records
 - Modification operations are disabled until online connectivity is restored
+- The local file system cache doesn't expire or clear automatically
 - A notification appears to indicate offline mode is active
 
 ## View Menu Options
@@ -105,7 +110,6 @@ The View menu provides several display options:
 ### Log Console
 
 - Toggle visibility of the log console at the bottom of the main window
-- Keyboard shortcut: Ctrl+L
 - The setting is remembered across application restarts
 
 ### Show Multiline Records

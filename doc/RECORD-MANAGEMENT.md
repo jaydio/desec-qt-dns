@@ -111,17 +111,6 @@ To delete a record:
    - Select the record and press the **Delete** key
 4. Confirm the deletion when prompted
 
-### Keyboard Shortcuts
-
-The following keyboard shortcuts are available for record management:
-
-- **Delete**: Delete the currently selected record (with confirmation)
-- **Ctrl+F**: Cycle through search filters (zone filter → record filter → zone filter)
-- **Escape**: Clear the current search filter
-- **F5**: Refresh all data from the API
-
-These shortcuts significantly improve workflow efficiency, especially when managing multiple records across different zones.
-
 ## Record Sorting and Filtering
 
 ### Sorting Records

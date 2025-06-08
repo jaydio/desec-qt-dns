@@ -256,22 +256,19 @@ class RecordWidget(QtWidgets.QWidget):
     def __init__(self, api_client, cache_manager, config_manager=None, parent=None):
         """
         Initialize the record widget.
-        
-        Args:
-            api_client: API client instance
-            cache_manager: Cache manager instance
-            config_manager: Configuration manager instance for settings (optional)
+        :param api_client: API client instance
+        :param cache_manager: Cache manager instance
+        :param config_manager: Configuration manager instance for settings (optional)
+        :param parent: Parent widget
         """
-        super().__init__()
-        
-        # Store API client for API interactions
+        super().__init__(parent)
         self.api_client = api_client
         self.cache_manager = cache_manager
         self.config_manager = config_manager
         self.current_domain = None
         self.records = []
         self.is_online = True  # Start assuming we are online
-        
+        self.can_edit = True  # Single source of truth for editability
         # Initialize multiline display setting from config if available
         self.show_multiline = False  # Default value
         if self.config_manager:
@@ -462,16 +459,16 @@ class RecordWidget(QtWidgets.QWidget):
                         self.records_table.setRowHeight(row, self.records_table.verticalHeader().defaultSectionSize())
     
     def set_edit_enabled(self, enabled):
-        """Enable or disable record editing controls based on online mode.
+        """Enable or disable record editing controls based on online/offline mode.
         
         Args:
             enabled (bool): Whether editing is enabled
         """
+        self.can_edit = enabled  # Single source of truth
         # Enable/disable add button
         if hasattr(self, 'add_record_btn'):
-            self.add_record_btn.setEnabled(enabled)
-            # Update the tooltip to explain why it's disabled
-            if not enabled:
+            self.add_record_btn.setEnabled(self.can_edit)
+            if not self.can_edit:
                 self.add_record_btn.setToolTip("Adding records is disabled in offline mode")
             else:
                 self.add_record_btn.setToolTip("")
@@ -479,9 +476,8 @@ class RecordWidget(QtWidgets.QWidget):
         # Enable/disable edit button
         for row in range(self.records_table.rowCount()):
             edit_btn = self.records_table.cellWidget(row, 4).layout().itemAt(0).widget()
-            edit_btn.setEnabled(enabled)
-            # Update the tooltip to explain why it's disabled
-            if not enabled:
+            edit_btn.setEnabled(self.can_edit)
+            if not self.can_edit:
                 edit_btn.setToolTip("Editing records is disabled in offline mode")
             else:
                 edit_btn.setToolTip("Edit the selected record")
@@ -489,9 +485,8 @@ class RecordWidget(QtWidgets.QWidget):
         # Enable/disable delete button
         for row in range(self.records_table.rowCount()):
             delete_btn = self.records_table.cellWidget(row, 4).layout().itemAt(1).widget()
-            delete_btn.setEnabled(enabled)
-            # Update the tooltip to explain why it's disabled
-            if not enabled:
+            delete_btn.setEnabled(self.can_edit)
+            if not self.can_edit:
                 delete_btn.setToolTip("Deleting records is disabled in offline mode")
             else:
                 delete_btn.setToolTip("Delete the selected record")
@@ -602,6 +597,9 @@ class RecordWidget(QtWidgets.QWidget):
             self.records_count_label.setText(f"Showing {filtered_count} out of {total_records} records")
         else:
             self.records_count_label.setText(f"Total records: {total_records}")
+
+        # Ensure edit controls reflect offline/online state after table update
+        self.set_edit_enabled(self.is_online and not self.config_manager.get_offline_mode())
         
         for row, record in enumerate(filtered_records):
             self.records_table.insertRow(row)
@@ -668,9 +666,11 @@ class RecordWidget(QtWidgets.QWidget):
             edit_btn.clicked.connect(lambda _, rec=record_ref: self.edit_record_by_ref(rec))
             # Store the record as a property on the button for Delete key handling
             edit_btn.setProperty('record_ref', record_ref)
-            edit_btn.setEnabled(self.is_online)
-            if not self.is_online:
-                edit_btn.setToolTip("Unavailable in offline mode")
+            edit_btn.setEnabled(self.can_edit)
+            if not self.can_edit:
+                edit_btn.setToolTip("Editing records is disabled in offline mode")
+            else:
+                edit_btn.setToolTip("Edit the selected record")
             
             # Delete button
             delete_btn = QtWidgets.QPushButton("Delete")
@@ -680,9 +680,11 @@ class RecordWidget(QtWidgets.QWidget):
             delete_btn.clicked.connect(lambda _, rec=record_ref: self.delete_record_by_ref(rec))
             # Store the record as a property on the button for Delete key handling
             delete_btn.setProperty('record_ref', record_ref)
-            delete_btn.setEnabled(self.is_online)
-            if not self.is_online:
-                delete_btn.setToolTip("Unavailable in offline mode")
+            delete_btn.setEnabled(self.can_edit)
+            if not self.can_edit:
+                delete_btn.setToolTip("Deleting records is disabled in offline mode")
+            else:
+                delete_btn.setToolTip("Delete the selected record")
             
             actions_layout.addWidget(edit_btn)
             actions_layout.addWidget(delete_btn)
@@ -726,7 +728,7 @@ class RecordWidget(QtWidgets.QWidget):
 
     def show_add_record_dialog(self):
         """Show dialog to add a new record."""
-        if not self.current_domain or not self.is_online:
+        if not self.current_domain or not self.can_edit:
             return
             
         dialog = RecordDialog(self.current_domain, self.api_client, parent=self)
@@ -764,6 +766,8 @@ class RecordWidget(QtWidgets.QWidget):
     
     def handle_cell_double_clicked(self, row, column):
         """Handle double-click on a cell."""
+        if not self.can_edit:
+            return
         # Ignore double-click on the Actions column
         if column != 4:  # 4 is the Actions column
             record_item = self.records_table.item(row, 0)
@@ -777,7 +781,7 @@ class RecordWidget(QtWidgets.QWidget):
         Args:
             record (dict): The record object to edit
         """
-        if not self.is_online or not record:
+        if not self.can_edit or not record:
             return
             
         dialog = RecordDialog(self.current_domain, self.api_client, record=record, parent=self)
@@ -794,7 +798,7 @@ class RecordWidget(QtWidgets.QWidget):
         Args:
             row (int): Row index in the table
         """
-        if not self.is_online:
+        if not self.can_edit:
             return
             
         record_item = self.records_table.item(row, 0)
@@ -814,9 +818,9 @@ class RecordWidget(QtWidgets.QWidget):
         """Delete the currently selected record in the table.
         Called when pressing the Delete key while the records table has focus.
         """
-        if not hasattr(self, 'records_table') or not self.is_online:
+        if not hasattr(self, 'records_table') or not self.can_edit:
             return
-            
+        
         # Get the currently selected row
         selected_rows = self.records_table.selectedIndexes()
         if not selected_rows:
