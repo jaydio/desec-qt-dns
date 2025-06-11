@@ -42,6 +42,7 @@ This document outlines planned features and improvements for future releases of 
   - [ ] Cloudflare
   - [ ] Microsoft 365
   - [ ] Mail-in-a-Box
+  - [ ] Cloudron
   - [ ] Mailcow
   - [ ] rDNS Zone Setup
     - Create reverse DNS zones from IP prefixes (IPv4/IPv6)
