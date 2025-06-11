@@ -42,6 +42,13 @@ This document outlines planned features and improvements for future releases of 
   - [ ] Microsoft 365
   - [ ] Mail-in-a-Box
   - [ ] Mailcow
+  - [ ] rDNS Zone Setup
+    - Create reverse DNS zones from IP prefixes (IPv4/IPv6)
+    - Automatically generate PTR records for all IPs in the prefix
+    - Customizable PTR record templates (e.g., {ip}.example.com or {dash-ip}.example.com)
+    - Support for both in-addr.arpa (IPv4) and ip6.arpa (IPv6) zones
+    - Batch PTR record generation with configurable TTL
+    - Preview of zone configuration before creation
   - [ ] Zimbra
   - [ ] Redmail
   - [ ] Let's Encrypt DNS challenges
