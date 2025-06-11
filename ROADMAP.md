@@ -39,6 +39,7 @@ This document outlines planned features and improvements for future releases of 
 - [ ] **Record Creation Wizards**  
   Guided setup for common DNS record configurations, including:
   - [ ] Google Workspace / Gmail
+  - [ ] Cloudflare
   - [ ] Microsoft 365
   - [ ] Mail-in-a-Box
   - [ ] Mailcow
@@ -52,6 +53,7 @@ This document outlines planned features and improvements for future releases of 
   - [ ] Zimbra
   - [ ] Redmail
   - [ ] Let's Encrypt DNS challenges
+  - [ ] User defined templates
   *(More to come)*
 
 ---
