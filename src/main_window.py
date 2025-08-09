@@ -20,6 +20,7 @@ from workers import LoadRecordsWorker
 
 from auth_dialog import AuthDialog
 from config_dialog import ConfigDialog
+from profile_dialog import ProfileDialog
 from zone_list_widget import ZoneListWidget
 from record_widget import RecordWidget
 from log_widget import LogWidget
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window with two-pane layout for zones and records."""
     
-    def __init__(self, config_manager, api_client, cache_manager, parent=None):
+    def __init__(self, config_manager, api_client, cache_manager, profile_manager=None, parent=None):
         """
         Initialize the main window.
         
@@ -38,6 +39,7 @@ class MainWindow(QtWidgets.QMainWindow):
             config_manager: Configuration manager instance
             api_client: API client instance
             cache_manager: Cache manager instance
+            profile_manager: Profile manager instance (optional for backward compatibility)
             parent: Parent widget, if any
         """
         super(MainWindow, self).__init__(parent)
@@ -45,6 +47,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.config_manager = config_manager
         self.api_client = api_client
         self.cache_manager = cache_manager
+        self.profile_manager = profile_manager
         
         # Initialize theme manager
         self.theme_manager = ThemeManager(config_manager)
@@ -219,6 +222,24 @@ class MainWindow(QtWidgets.QMainWindow):
         quit_action.setStatusTip("Quit the application")
         quit_action.triggered.connect(self._confirm_quit_dialog)
         file_menu.addAction(quit_action)
+        
+        # Profile menu (only show if profile manager is available)
+        if self.profile_manager:
+            profile_menu = menu_bar.addMenu("&Profile")
+            
+            # Current profile info
+            current_profile = self.profile_manager.get_current_profile_info()
+            if current_profile:
+                current_profile_action = QtGui.QAction(f"Current: {current_profile['display_name']}", self)
+                current_profile_action.setEnabled(False)  # Just for display
+                profile_menu.addAction(current_profile_action)
+                profile_menu.addSeparator()
+            
+            # Manage profiles action
+            manage_profiles_action = QtGui.QAction("&Manage Profiles...", self)
+            manage_profiles_action.setStatusTip("Create, switch, rename, or delete profiles")
+            manage_profiles_action.triggered.connect(self.show_profile_dialog)
+            profile_menu.addAction(manage_profiles_action)
         
         # Connection menu
         connection_menu = menu_bar.addMenu("&Connection")
@@ -630,6 +651,61 @@ class MainWindow(QtWidgets.QMainWindow):
             # Perform a fresh check on the API
             self.check_api_connectivity(True)
     
+    def show_profile_dialog(self):
+        """Show the profile management dialog."""
+        if not self.profile_manager:
+            self.log_message("Profile management is not available", "warning")
+            return
+        
+        dialog = ProfileDialog(self.profile_manager, self)
+        dialog.profile_switched.connect(self.on_profile_switched)
+        dialog.exec()
+    
+    def on_profile_switched(self, profile_name):
+        """Handle profile switching.
+        
+        Args:
+            profile_name: Name of the new profile
+        """
+        self.log_message(f"Profile switched to '{profile_name}'. Restarting application...", "info")
+        
+        # Show a message to the user
+        QtWidgets.QMessageBox.information(
+            self, "Profile Switched", 
+            f"Profile switched to '{profile_name}'.\n\n"
+            "The application will restart to apply the new profile settings."
+        )
+        
+        # Restart the application
+        self.restart_application()
+    
+    def restart_application(self):
+        """Restart the application to apply profile changes."""
+        import sys
+        import os
+        
+        try:
+            # Save any pending configuration changes
+            self.config_manager.save_config()
+            
+            # Get the current executable and arguments
+            python_executable = sys.executable
+            script_path = sys.argv[0]
+            
+            # Close the current application
+            QtWidgets.QApplication.quit()
+            
+            # Start a new instance
+            os.execl(python_executable, python_executable, script_path)
+            
+        except Exception as e:
+            logger.error(f"Failed to restart application: {e}")
+            QtWidgets.QMessageBox.critical(
+                self, "Restart Failed", 
+                f"Failed to restart the application: {str(e)}\n\n"
+                "Please restart manually to apply profile changes."
+            )
+    
     def log_message(self, message, level="info"):
         """
         Add a message to the log panel.
@@ -723,7 +799,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "<h2 align=\"center\">deSEC Qt DNS Manager</h2>"
             "<p align=\"center\">A desktop application for managing DNS zones and records<br/>"
             "using the deSEC API.</p>"
-            "<p align=\"center\"><b>Version 0.4.0-beta</b></p>"
+            "<p align=\"center\"><b>Version 0.5.0-beta</b></p>"
             "<hr/>"
             "<p align=\"center\">🚀 Developed by <b>JD Bungart</b></p>"
             "<p align=\"center\">✉️ <a href=\"mailto:me@jdneer.com\">me@jdneer.com</a></p>"

@@ -22,8 +22,14 @@ This document outlines planned features and improvements for future releases of 
 - [ ] **Global Search and Replace**  
   Quickly search across all or selected zones and records, with optional batch replace functionality for efficient bulk edits.
 
-- [ ] **Multi-Profile Support**  
+- [x] **Multi-Profile Support** (in 0.5.0-beta)
   Isolated tokens, cache, and settings per profile for managing multiple identities or environments.
+  - [x] Create, switch, rename, and delete profiles
+  - [x] Complete data isolation per profile (API tokens, cache, settings)
+  - [x] Automatic legacy configuration migration
+  - [x] Profile management UI with safety checks
+  - [x] Application restart on profile switch for complete isolation
+  - [x] Comprehensive documentation (doc/PROFILES.md)
 
 - [ ] **Batch Actions via Selectable List/Table**  
   Enable multi-select with checkboxes for performing actions on multiple records or zones at once.

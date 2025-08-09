@@ -8,11 +8,12 @@ A Qt6 desktop application for managing DNS zones and records using the deSEC DNS
 
 ## Features
 
+- **Multi-Profile Support** - Manage multiple deSEC accounts or environments with isolated tokens, cache, and settings
 - Authentication with deSEC API token
 - Zone management (add, delete, list, search)
 - DNS record management (view, add, edit, delete)
 - Support for the following resource record types: ```A, AAAA, AFSDB, APL, CAA, CDNSKEY, CDS, CERT, CNAME, DHCID, DNAME, DNSKEY, DLV, DS, EUI48, EUI64, HINFO, HTTPS, KX, L32, L64, LOC, LP, MX, NAPTR, NID, NS, OPENPGPKEY, PTR, RP, SMIMEA, SPF, SRV, SSHFP, SVCB, TLSA, TXT, URI```
-- Reverse DNS Zone suppor
+- Reverse DNS Zone support
 - Record-specific TTL management
 - Data caching for offline access
 - Clear Cache functionality to refresh data
@@ -74,6 +75,25 @@ deactivate
 ```
 
 Alternatively, just close the terminal.
+
+## Multi-Profile Support
+
+The application supports multiple user profiles, allowing you to manage different deSEC accounts or environments with complete data isolation. Each profile maintains its own API tokens, cache, and configuration settings.
+
+### Quick Start with Profiles
+
+1. **Access Profile Management**: Go to **Profile → Manage Profiles...** in the menu
+2. **Create New Profile**: Click "Create New..." and enter a name (e.g., "work", "personal")
+3. **Switch Profiles**: Select a profile and click "Switch To" (application will restart)
+4. **Configure Each Profile**: Set up API tokens and settings independently for each profile
+
+### Use Cases
+
+- **Multiple deSEC Accounts**: Separate work and personal DNS management
+- **Environment Separation**: Different profiles for production, staging, and development
+- **Team Collaboration**: Individual profiles for different team members or access levels
+
+For detailed information about multi-profile features, see [doc/PROFILES.md](doc/PROFILES.md).
 
 ## Configuration
 

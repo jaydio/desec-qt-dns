@@ -5,6 +5,38 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0-beta] - 2025-08-10
+
+### Added in 0.5.0-beta
+
+- **Multi-Profile Support** - Complete implementation of user profiles for managing multiple deSEC accounts or environments
+  - Create, switch, rename, and delete profiles through intuitive UI (Profile → Manage Profiles...)
+  - Complete data isolation per profile (API tokens, cache, configuration settings)
+  - Automatic legacy configuration migration to "Default Profile" for existing users
+  - Profile management dialog with safety checks and confirmation prompts
+  - Application restart on profile switch ensures complete isolation
+  - Each profile stored in separate directory: `~/.config/desecqt/profiles/{profile_name}/`
+- Added comprehensive documentation in `doc/PROFILES.md` covering usage, best practices, and troubleshooting
+- Added Profile menu to main window showing current active profile
+- Added profile switching functionality with automatic application restart
+- Updated README.md with multi-profile support information and quick start guide
+
+### Technical Improvements in 0.5.0-beta
+
+- Implemented `ProfileManager` class for centralized profile operations
+- Implemented `ProfileDialog` with full profile management capabilities
+- Enhanced `ConfigManager` and `CacheManager` to work with profile-specific directories
+- Added profile metadata management with `profiles.json` configuration file
+- Improved application architecture to support multiple isolated configurations
+
+### Use Cases Enabled in 0.5.0-beta
+
+- Manage multiple deSEC accounts from a single application instance
+- Separate work and personal DNS configurations
+- Environment-specific profiles (production, staging, development)
+- Team collaboration with individual member profiles
+- Complete data isolation between different use cases
+
 ## [0.4.0-beta] - 2025-06-09
 
 ### Added in 0.4.0-beta

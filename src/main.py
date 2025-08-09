@@ -13,9 +13,8 @@ import time
 from PyQt6 import QtGui, QtCore, QtWidgets
 
 # Import local modules
-from config_manager import ConfigManager
+from profile_manager import ProfileManager
 from api_client import APIClient
-from cache_manager import CacheManager
 from main_window import MainWindow
 
 # Set up logging
@@ -48,13 +47,14 @@ def main():
         # Force application to process events before theme detection
         app.processEvents()
         
-        # Set up components
-        config_manager = ConfigManager()
+        # Set up profile management
+        profile_manager = ProfileManager()
+        config_manager = profile_manager.get_config_manager()
+        cache_manager = profile_manager.get_cache_manager()
         api_client = APIClient(config_manager)
-        cache_manager = CacheManager()
         
         # Create and show main window
-        main_window = MainWindow(config_manager, api_client, cache_manager)
+        main_window = MainWindow(config_manager, api_client, cache_manager, profile_manager)
         main_window.show()
         
         # Launch the application
