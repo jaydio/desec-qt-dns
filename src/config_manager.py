@@ -34,7 +34,7 @@ class ConfigManager:
             "keepalive_interval": 60,  # Default keepalive check interval in seconds
             "offline_mode": False,  # Default to online mode
             "show_multiline_records": True,  # Default to full display of multiline records
-            "api_throttle_seconds": 2,  # Default delay between API requests to avoid rate limiting
+            "api_rate_limit": 2.0,  # Default API requests per second (0 = no limit)
             "theme_type": "light",  # Default theme type (light, dark, system)
             "light_theme_id": "light_plus",  # Default light theme ID
             "dark_theme_id": "dark_plus"  # Default dark theme ID
@@ -213,13 +213,42 @@ class ConfigManager:
         """
         self._config["show_multiline_records"] = enabled
         
-    def get_api_throttle_seconds(self):
-        """Get the API request throttling delay in seconds.
+    def get_api_rate_limit(self):
+        """Get the API request rate limit in requests per second.
         
         Returns:
-            float: The delay between API requests in seconds
+            float: The maximum requests per second (0 = no limit)
         """
-        return self._config.get("api_throttle_seconds", 2.0)  # Default to 2 seconds
+        return self._config.get("api_rate_limit", 2.0)  # Default to 2 requests per second
+    
+    def set_api_rate_limit(self, rate_limit):
+        """Set the API request rate limit.
+        
+        Args:
+            rate_limit (float): Maximum requests per second (0 = no limit)
+        """
+        self._config["api_rate_limit"] = float(rate_limit)
+    
+    def get_setting(self, key, default=None):
+        """Get a configuration setting by key.
+        
+        Args:
+            key (str): Configuration key
+            default: Default value if key doesn't exist
+            
+        Returns:
+            The configuration value or default
+        """
+        return self._config.get(key, default)
+    
+    def set_setting(self, key, value):
+        """Set a configuration setting by key.
+        
+        Args:
+            key (str): Configuration key
+            value: Value to set
+        """
+        self._config[key] = value
     
     def set_api_throttle_seconds(self, seconds):
         """Set the API request throttling delay in seconds.

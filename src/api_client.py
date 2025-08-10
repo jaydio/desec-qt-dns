@@ -11,6 +11,7 @@ import logging
 import requests
 from datetime import datetime
 import time
+from threading import Lock
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,11 @@ class APIClient:
         self.config_manager = config_manager
         self.last_error = None
         self.is_online = False
+        
+        # Rate limiting
+        self._rate_limit_lock = Lock()
+        self._last_request_time = 0
+        
         self.check_connectivity()
     
     def _get_headers(self):
@@ -41,6 +47,34 @@ class APIClient:
             'Content-Type': 'application/json'
         }
     
+    def _apply_rate_limit(self):
+        """
+        Apply rate limiting to prevent API throttling.
+        Waits if necessary to maintain the configured rate limit.
+        """
+        with self._rate_limit_lock:
+            # Get rate limit from config (requests per second, default 2)
+            rate_limit = self.config_manager.get_setting('api_rate_limit', 2.0)
+            
+            if rate_limit <= 0:
+                return  # No rate limiting
+            
+            # Calculate minimum time between requests
+            min_interval = 1.0 / rate_limit
+            
+            # Calculate time since last request
+            current_time = time.time()
+            time_since_last = current_time - self._last_request_time
+            
+            # Wait if we need to throttle
+            if time_since_last < min_interval:
+                sleep_time = min_interval - time_since_last
+                logger.debug(f"Rate limiting: sleeping for {sleep_time:.3f}s")
+                time.sleep(sleep_time)
+            
+            # Update last request time
+            self._last_request_time = time.time()
+    
     def _make_request(self, method, endpoint, data=None, params=None):
         """
         Make a request to the deSEC API.
@@ -54,6 +88,9 @@ class APIClient:
         Returns:
             tuple: (success, response_data or error_message)
         """
+        # Apply rate limiting before making the request
+        self._apply_rate_limit()
+        
         url = f"{self.config_manager.get_api_url()}{endpoint}"
         headers = self._get_headers()
         

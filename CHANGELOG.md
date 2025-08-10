@@ -5,6 +5,70 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0-beta] - 2025-08-10
+
+### Added in 0.6.0-beta
+
+- **Enhanced Import/Export Functionality** - Major improvements to DNS zone import/export capabilities
+  - Enhanced import modes with clear terminology: "Append", "Merge", "Replace" with detailed descriptions
+  - Target zone selection allowing users to specify destination zone with auto-creation if missing
+  - Real-time progress tracking with visual progress bar showing actual percentage (0-100%)
+  - Auto-generated export filenames with timestamps for better organization
+  - Post-import synchronization for immediate UI updates after successful imports
+- **API Rate Limiting System** - User-configurable rate limiting to prevent timeouts during bulk operations
+  - Configurable rate limiting from 0-10 requests/second (default: 2 req/sec)
+  - Centralized implementation with thread-safe design for all API calls
+  - Configuration integration with per-profile persistence and UI controls in settings dialog
+  - Bulk operation support to prevent timeouts during large import operations
+- **Enhanced Progress Tracking** - Professional-grade progress feedback for all operations
+  - Determinate progress bar showing actual completion percentage instead of indeterminate spinner
+  - Multi-stage progress tracking: File parsing → Zone setup → Record processing → Completion
+  - Per-record progress updates during import operations
+  - Clear status messages describing current operations ("Creating 25 records...", "Processed 15/25 records...")
+  - Support for all import modes: Append, Merge, and Replace
+- **Zone Management Improvements** - Enhanced zone operations with better UI consistency
+  - Enhanced zone deletion that automatically triggers sync and clears records view
+  - Proper UI state management ensuring interface reflects actual API state
+  - Automatic cache cleanup and UI updates after zone operations
+- **Comprehensive Documentation** - New and updated documentation for all features
+  - New `doc/RATE-LIMIT.md` with comprehensive API rate limiting guide
+  - Enhanced `doc/IMPORT_EXPORT.md` with new import modes and features
+  - Updated `ROADMAP.md` and `README.md` reflecting v0.6.0-beta enhancements
+
+### Fixed in 0.6.0-beta
+
+- **Profile Switching** - Fixed application restart functionality
+  - Profile switching now properly restarts the application to load new profile configuration
+  - Ensures complete profile isolation with no data mixing between profiles
+  - Reliable configuration loading with all components using correct profile settings
+- **Import/Export Stability** - Improved error handling and validation
+  - Better error messages and recovery during import operations
+  - Fixed tuple unpacking errors related to record data processing
+  - Enhanced file format validation with better user feedback
+- **UI State Management** - Consistent interface behavior after operations
+  - Fixed UI consistency issues after zone deletion
+  - Proper records view clearing when zones are deleted
+  - Improved error handling with graceful failure recovery
+
+### Technical Improvements in 0.6.0-beta
+
+- Enhanced `ImportExportManager` with progress callback support throughout import/export operations
+- Improved `APIClient` with centralized rate limiting using thread-safe locks
+- Better error handling and logging throughout the application
+- Generic configuration accessors (`get_setting`/`set_setting`) for future extensibility
+- New `api_rate_limit` setting with proper getter/setter methods
+- Enhanced configuration dialog with help text and validation
+- Improved UI/UX with clearer import mode descriptions and warnings for destructive operations
+- Real-time progress feedback during all operations with consistent terminology
+
+### Use Cases Enhanced in 0.6.0-beta
+
+- **Professional DNS Management** - Enterprise-level features for bulk operations and data migration
+- **Reliable Bulk Operations** - Rate limiting prevents API timeouts during large imports
+- **Clear Progress Feedback** - Users can see exactly what's happening during operations
+- **Flexible Import Options** - Multiple import modes for different use cases and safety requirements
+- **Better Zone Management** - Consistent UI state and immediate feedback after operations
+
 ## [0.5.0-beta] - 2025-08-10
 
 ### Added in 0.5.0-beta

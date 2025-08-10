@@ -6,9 +6,17 @@
 
 A Qt6 desktop application for managing DNS zones and records using the deSEC DNS API.
 
-## Features
+## ✨ Key Features
 
-- **Multi-Profile Support** - Manage multiple deSEC accounts or environments with isolated tokens, cache, and settings
+- **Multi-Profile Support** - Manage multiple deSEC accounts or environments with isolated tokens, cache, and settings per profile
+- **Enhanced Import/Export Functionality** - Backup, migrate, and manage DNS configurations with advanced features: multiple formats (JSON, YAML, BIND, djbdns), real-time progress tracking, flexible import modes (Append/Merge/Replace), and API rate limiting
+- **Intuitive Zone Management** - Create, delete, and manage DNS zones with a clean interface
+- **Comprehensive Record Support** - Full support for all DNS record types (A, AAAA, CNAME, MX, TXT, SRV, CAA, and more)
+- **Real-time Sync** - Automatic synchronization with deSEC API
+- **Offline Mode** - Continue working with cached data when offline
+- **Smart Caching** - Intelligent caching system for improved performance
+- **Theme Support** - Light, dark, and system-based themes
+- **Robust Error Handling** - Clear error messages and graceful failure handling
 - Authentication with deSEC API token
 - Zone management (add, delete, list, search)
 - DNS record management (view, add, edit, delete)
@@ -95,6 +103,53 @@ The application supports multiple user profiles, allowing you to manage differen
 
 For detailed information about multi-profile features, see [doc/PROFILES.md](doc/PROFILES.md).
 
+## 📁 Enhanced Import/Export Functionality (v0.6.0-beta)
+
+The application supports importing and exporting DNS zones and records in multiple formats with advanced features for backup, migration, and Infrastructure-as-Code workflows.
+
+### Supported Formats
+
+- **JSON** (API-compatible) - Direct deSEC API format, perfect for backups and programmatic processing
+- **YAML** (Infrastructure-as-Code) - Human-readable format ideal for version control and DevOps workflows
+- **BIND Zone Files** - Industry standard format for DNS server configurations
+- **djbdns/tinydns** - Compact format for djbdns/tinydns server setups
+
+### New Features in v0.6.0-beta
+
+- **Enhanced Import Modes**: Clear terminology with Append, Merge, and Replace modes
+- **Real-time Progress Tracking**: Visual progress bar with percentage and status updates
+- **Target Zone Selection**: Import to existing zones or auto-create new ones
+- **API Rate Limiting**: Configurable rate limiting (0-10 req/sec) to prevent timeouts
+- **Auto-generated Filenames**: Timestamp-based export filenames for better organization
+- **Post-import Sync**: Automatic UI refresh after successful imports
+
+### Quick Start
+
+1. **Export a Zone**: `File → Import/Export...` → Export tab
+   - Select zone to export
+   - Choose format (JSON, YAML, BIND, djbdns)
+   - Configure options (include/exclude metadata)
+   - Auto-generated filename with timestamp
+   - Save to file
+
+2. **Import a Zone**: `File → Import/Export...` → Import tab
+   - Select file to import
+   - Choose matching format and target zone
+   - Select import mode (Append/Merge/Replace)
+   - Preview import data (recommended)
+   - Watch real-time progress during import
+   - Automatic UI sync after completion
+
+### Use Cases
+
+- **Backup & Recovery**: Regular exports for disaster recovery
+- **DNS Migration**: Move configurations between DNS providers
+- **Infrastructure-as-Code**: Version control DNS configurations with Git
+- **Environment Sync**: Keep staging and production DNS in sync
+- **Multi-Provider Setup**: Export from one provider, import to another
+
+For comprehensive documentation, see [doc/IMPORT_EXPORT.md](doc/IMPORT_EXPORT.md) and [doc/RATE-LIMIT.md](doc/RATE-LIMIT.md).
+
 ## Configuration
 
 The application stores configuration in:
@@ -109,6 +164,9 @@ You can edit the API URL and authentication token through the application's conf
 
 Detailed documentation is available in the `doc/` directory:
 
+- [Multi-Profile Support](doc/PROFILES.md) - Complete guide to managing multiple deSEC accounts and environments
+- [Import/Export Functionality](doc/IMPORT_EXPORT.md) - Comprehensive documentation for backup, migration, and Infrastructure-as-Code workflows
+- [API Rate Limiting](doc/RATE-LIMIT.md) - Guide to configurable API rate limiting for bulk operations
 - [Architecture](doc/ARCHITECTURE.md) - Details on the application's structure and design patterns
 - [Caching System](doc/CACHING.md) - Information about the multi-layered caching implementation with optimized indexing
 - [Configuration](doc/CONFIG.md) - Guide to configuration options and settings

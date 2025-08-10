@@ -21,6 +21,8 @@ from workers import LoadRecordsWorker
 from auth_dialog import AuthDialog
 from config_dialog import ConfigDialog
 from profile_dialog import ProfileDialog
+from import_export_manager import ImportExportManager
+from import_export_dialog import ImportExportDialog
 from zone_list_widget import ZoneListWidget
 from record_widget import RecordWidget
 from log_widget import LogWidget
@@ -48,6 +50,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.api_client = api_client
         self.cache_manager = cache_manager
         self.profile_manager = profile_manager
+        
+        # Initialize import/export manager
+        self.import_export_manager = ImportExportManager(api_client, cache_manager)
         
         # Initialize theme manager
         self.theme_manager = ThemeManager(config_manager)
@@ -140,7 +145,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.zone_list = ZoneListWidget(self.api_client, self.cache_manager)
         self.zone_list.zone_selected.connect(self.on_zone_selected)
         self.zone_list.zone_added.connect(self.sync_data)
-        self.zone_list.zone_deleted.connect(self.sync_data)
+        self.zone_list.zone_deleted.connect(self.on_zone_deleted)
         self.zone_list.log_message.connect(self.log_message)
         zones_layout.addWidget(self.zone_list)
         
@@ -212,6 +217,15 @@ class MainWindow(QtWidgets.QMainWindow):
         clear_cache_action.setStatusTip("Clear all cached data and initiate a new sync")
         clear_cache_action.triggered.connect(self.clear_cache)
         file_menu.addAction(clear_cache_action)
+        
+        # Add separator
+        file_menu.addSeparator()
+        
+        # Import/Export menu item
+        import_export_action = QtGui.QAction("&Import/Export...", self)
+        import_export_action.setStatusTip("Import or export DNS zones and records")
+        import_export_action.triggered.connect(self.show_import_export_dialog)
+        file_menu.addAction(import_export_action)
         
         # Add separator
         file_menu.addSeparator()
@@ -668,16 +682,20 @@ class MainWindow(QtWidgets.QMainWindow):
             profile_name: Name of the new profile
         """
         self.log_message(f"Profile switched to '{profile_name}'. Restarting application...", "info")
-        
-        # Show a message to the user
-        QtWidgets.QMessageBox.information(
-            self, "Profile Switched", 
-            f"Profile switched to '{profile_name}'.\n\n"
-            "The application will restart to apply the new profile settings."
-        )
-        
-        # Restart the application
+        # Restart the application to load the new profile
         self.restart_application()
+    
+    def show_import_export_dialog(self):
+        """Show the import/export dialog."""
+        # Get list of available zones for export
+        available_zones = []
+        if hasattr(self.zone_list, 'zone_model') and self.zone_list.zone_model.zones:
+            available_zones = [zone.get('name', '') for zone in self.zone_list.zone_model.zones]
+        
+        dialog = ImportExportDialog(self.import_export_manager, available_zones, self)
+        # Connect import completion signal to trigger sync
+        dialog.import_completed.connect(self.sync_data)
+        dialog.exec()
     
     def restart_application(self):
         """Restart the application to apply profile changes."""
@@ -1111,6 +1129,19 @@ class MainWindow(QtWidgets.QMainWindow):
         if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
             # Delete the zone
             self.zone_list.delete_zone(zone_name)
+    
+    def on_zone_deleted(self):
+        """Handle zone deletion by syncing data and clearing records view."""
+        # Clear the records view by setting domain to None
+        self.record_widget.current_domain = None
+        self.record_widget.records = []
+        self.record_widget.update_records_table()
+        
+        # Trigger a sync to refresh the zone list
+        self.sync_data()
+        
+        # Log the action
+        self.log_message("Zone deleted - records view cleared and data synced", "info")
     
     def _confirm_quit_dialog(self):
         """Show confirmation dialog before quitting."""

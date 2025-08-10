@@ -34,13 +34,21 @@ This document outlines planned features and improvements for future releases of 
 - [ ] **Batch Actions via Selectable List/Table**  
   Enable multi-select with checkboxes for performing actions on multiple records or zones at once.
 
-- [ ] **Import/Export Functionality**  
+- [x] **Import/Export Functionality** (Enhanced in v0.6.0-beta)
   Support for DNS zone import/export in various formats:
-  - [ ] JSON (API-compatible)
-  - [ ] YAML (Infra-as-Code tools)
-  - [ ] BIND zone files
-  - [ ] djbdns/tinydns format  
-  *(and others as needed)*
+  - [x] JSON (API-compatible) - Direct deSEC API format for backups and programmatic processing
+  - [x] YAML (Infrastructure-as-Code) - Human-readable format for version control and DevOps workflows
+  - [x] BIND zone files - Industry standard format for DNS server configurations
+  - [x] djbdns/tinydns format - Compact format for djbdns/tinydns server setups
+  - [x] Enhanced import modes: Append, Merge, Replace with clear terminology and behavior
+  - [x] Target zone selection with auto-creation for flexible import destinations
+  - [x] Real-time progress tracking with percentage and status updates
+  - [x] Auto-generated export filenames with timestamps for better organization
+  - [x] Post-import synchronization for immediate UI updates
+  - [x] API rate limiting (0-10 req/sec) to prevent timeouts during bulk operations
+  - [x] Comprehensive UI with export/import dialogs, preview functionality, and progress tracking
+  - [x] Multiple use cases: backup & recovery, DNS migration, Infrastructure-as-Code, environment sync
+  - [x] Complete documentation in doc/IMPORT_EXPORT.md and doc/RATE-LIMIT.md
 
 - [ ] **Record Creation Wizards**  
   Guided setup for common DNS record configurations, including:

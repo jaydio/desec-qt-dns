@@ -70,6 +70,22 @@ class ConfigDialog(QtWidgets.QDialog):
         self.sync_interval_input.setSuffix(" minutes")
         form_layout.addRow("Sync Interval:", self.sync_interval_input)
         
+        # API Rate Limit
+        self.api_rate_limit_input = QtWidgets.QDoubleSpinBox()
+        self.api_rate_limit_input.setRange(0.1, 10.0)  # 0.1 to 10 requests per second
+        self.api_rate_limit_input.setSingleStep(0.5)
+        self.api_rate_limit_input.setDecimals(1)
+        self.api_rate_limit_input.setSuffix(" req/sec")
+        self.api_rate_limit_input.setSpecialValueText("No limit")
+        self.api_rate_limit_input.setMinimum(0.0)  # Allow 0 for no limit
+        form_layout.addRow("API Rate Limit:", self.api_rate_limit_input)
+        
+        # Add help text for rate limit
+        rate_limit_help = QtWidgets.QLabel("Lower values prevent API timeouts during bulk operations")
+        rate_limit_help.setStyleSheet("color: #666; font-size: 11px;")
+        rate_limit_help.setWordWrap(True)
+        form_layout.addRow("", rate_limit_help)
+        
         # Debug mode
         self.debug_mode_checkbox = QtWidgets.QCheckBox("Enable debug mode")
         form_layout.addRow("", self.debug_mode_checkbox)
@@ -150,6 +166,7 @@ class ConfigDialog(QtWidgets.QDialog):
         self.api_url_input.setText(self.config_manager.get_api_url())
         self.token_input.setText(self.config_manager.get_auth_token())
         self.sync_interval_input.setValue(self.config_manager.get_sync_interval())
+        self.api_rate_limit_input.setValue(self.config_manager.get_setting('api_rate_limit', 2.0))
         self.debug_mode_checkbox.setChecked(self.config_manager.get_debug_mode())
         
         # Initialize theme settings
@@ -238,6 +255,7 @@ class ConfigDialog(QtWidgets.QDialog):
         self.config_manager.set_api_url(api_url)
         self.config_manager.set_auth_token(self.token_input.text().strip())
         self.config_manager.set_sync_interval(self.sync_interval_input.value())
+        self.config_manager.set_setting('api_rate_limit', self.api_rate_limit_input.value())
         self.config_manager.set_debug_mode(self.debug_mode_checkbox.isChecked())
         
         # Save theme settings
