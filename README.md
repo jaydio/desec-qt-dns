@@ -2,7 +2,7 @@
 
 ![deSEC DNS Manager - Main Window](img/main_window.png)
 
-More screenshots are available in the `img/` directory.
+📸 **[View all screenshots and application interface examples →](img/README.md)**
 
 A Qt6 desktop application for managing DNS zones and records using the deSEC DNS API.
 
