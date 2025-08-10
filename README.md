@@ -1,40 +1,31 @@
 # deSEC Qt6 DNS Manager
 
-![deSEC DNS Manager - Main Window](img/0.3.0/01-main-window.png)
+![deSEC DNS Manager - Main Window](img/main_window.png)
 
-![deSEC DNS Manager - Edit Dialog](img/0.3.0/02-edit-dialog-mx.png)
+More screenshots are available in the `img/` directory.
 
 A Qt6 desktop application for managing DNS zones and records using the deSEC DNS API.
 
 ## ✨ Key Features
 
+### Core Functionality
 - **Multi-Profile Support** - Manage multiple deSEC accounts or environments with isolated tokens, cache, and settings per profile
-- **Enhanced Import/Export Functionality** - Backup, migrate, and manage DNS configurations with advanced features: multiple formats (JSON, YAML, BIND, djbdns), real-time progress tracking, flexible import modes (Append/Merge/Replace), and API rate limiting
-- **Intuitive Zone Management** - Create, delete, and manage DNS zones with a clean interface
-- **Comprehensive Record Support** - Full support for all DNS record types (A, AAAA, CNAME, MX, TXT, SRV, CAA, and more)
-- **Real-time Sync** - Automatic synchronization with deSEC API
-- **Offline Mode** - Continue working with cached data when offline
-- **Smart Caching** - Intelligent caching system for improved performance
-- **Theme Support** - Light, dark, and system-based themes
+- **Enhanced Import/Export** - Backup, migrate, and manage DNS configurations with multiple formats (JSON, YAML, BIND, djbdns), real-time progress tracking, and flexible import modes
+- **Comprehensive DNS Management** - Full support for all standard DNS record types with intuitive zone and record management
+- **Real-time Synchronization** - Automatic sync with deSEC API and offline mode with cached data access
+
+### User Experience
+- **Modern Interface** - Clean two-pane layout with light, dark, and system-based themes
+- **Smart Navigation** - Full keyboard shortcuts, sortable tables, and double-click editing
+- **Visual Feedback** - Real-time progress tracking, offline indicators, and elapsed time since last sync
 - **Robust Error Handling** - Clear error messages and graceful failure handling
-- Authentication with deSEC API token
-- Zone management (add, delete, list, search)
-- DNS record management (view, add, edit, delete)
-- Support for the following resource record types: ```A, AAAA, AFSDB, APL, CAA, CDNSKEY, CDS, CERT, CNAME, DHCID, DNAME, DNSKEY, DLV, DS, EUI48, EUI64, HINFO, HTTPS, KX, L32, L64, LOC, LP, MX, NAPTR, NID, NS, OPENPGPKEY, PTR, RP, SMIMEA, SPF, SRV, SSHFP, SVCB, TLSA, TXT, URI```
-- Reverse DNS Zone support
-- Record-specific TTL management
-- Data caching for offline access
-- Clear Cache functionality to refresh data
-- Two-pane layout for easy navigation
-- Configuration editor for API settings
-- Performance-optimized with indexed lookups
-- Full keyboard navigation with shortcuts
-- DNS record table sorting by clicking column headers
-- Double-click to edit records
-- Multiline DNS records display for better readability
-- Integrated log console within the main window
-- Offline mode with visual indicators
-- Elapsed time display since last sync
+
+### Technical Features
+- **Performance Optimized** - Smart caching system with indexed lookups for improved performance
+- **Flexible Configuration** - Built-in configuration editor for API settings and rate limiting
+- **Comprehensive Logging** - Integrated log console within the main window
+- **Advanced Record Support** - Support for all deSEC-compatible record types: A, AAAA, AFSDB, APL, CAA, CDNSKEY, CDS, CERT, CNAME, DHCID, DNAME, DNSKEY, DLV, DS, EUI48, EUI64, HINFO, HTTPS, KX, L32, L64, LOC, LP, MX, NAPTR, NID, NS, OPENPGPKEY, PTR, RP, SMIMEA, SPF, SRV, SSHFP, SVCB, TLSA, TXT, URI
+- **Advanced Features** - Reverse DNS zone support, record-specific TTL management, and multiline record display
 
 ## Limitations
 
@@ -167,6 +158,7 @@ Detailed documentation is available in the `doc/` directory:
 - [Multi-Profile Support](doc/PROFILES.md) - Complete guide to managing multiple deSEC accounts and environments
 - [Import/Export Functionality](doc/IMPORT_EXPORT.md) - Comprehensive documentation for backup, migration, and Infrastructure-as-Code workflows
 - [API Rate Limiting](doc/RATE-LIMIT.md) - Guide to configurable API rate limiting for bulk operations
+- [Release Process](doc/RELEASE-PROCESS.md) - Step-by-step guide for creating new releases and maintaining version consistency
 - [Architecture](doc/ARCHITECTURE.md) - Details on the application's structure and design patterns
 - [Caching System](doc/CACHING.md) - Information about the multi-layered caching implementation with optimized indexing
 - [Configuration](doc/CONFIG.md) - Guide to configuration options and settings
