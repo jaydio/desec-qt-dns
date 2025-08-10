@@ -18,6 +18,7 @@ A Qt6 desktop application for managing DNS zones and records using the deSEC DNS
 - **Modern Interface** - Clean two-pane layout with light, dark, and system-based themes
 - **Smart Navigation** - Full keyboard shortcuts, sortable tables, and double-click editing
 - **Visual Feedback** - Real-time progress tracking, offline indicators, and elapsed time since last sync
+- **Record Insights** - Hover tooltips showing creation and last modification timestamps for all DNS records
 - **Robust Error Handling** - Clear error messages and graceful failure handling
 
 ### Technical Features

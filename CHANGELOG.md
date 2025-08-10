@@ -5,6 +5,31 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0-beta] - 2025-08-11
+
+### Added in 0.7.0-beta
+
+- **Record Timestamp Tooltips** - Enhanced user experience with hover tooltips showing DNS record metadata
+  - Hover tooltips display creation and last modification timestamps for all DNS records
+  - Clean timestamp display showing "Created" and "Last Modified" dates in UTC format
+  - Available on all record table columns (Name, Type, TTL, Content) for comprehensive coverage
+  - Timestamps sourced directly from deSEC API cache data when available
+
+### Technical Improvements in 0.7.0-beta
+
+- Added `_get_timestamp_tooltip()` helper method for consistent timestamp formatting
+- Enhanced record table items with timestamp metadata display
+- Improved user interface feedback with non-intrusive hover information
+- ISO timestamp parsing with graceful fallback for malformed dates
+
+### Documentation in 0.7.0-beta
+
+- Added comprehensive release process documentation (`doc/RELEASE-PROCESS.md`)
+- Reorganized README.md Key Features section to eliminate redundancies
+- Updated screenshot gallery with new tooltip demonstration (`img/record_list_tooltip.png`)
+- Enhanced visual documentation with timestamp tooltip examples
+- Improved project organization and maintainability documentation
+
 ## [0.6.0-beta] - 2025-08-10
 
 ### Added in 0.6.0-beta

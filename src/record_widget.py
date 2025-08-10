@@ -610,6 +610,12 @@ class RecordWidget(QtWidgets.QWidget):
                 name = '@'  # Represent apex with @
             name_item = QtWidgets.QTableWidgetItem(name)
             name_item.setData(Qt.ItemDataRole.UserRole, record)
+            
+            # Add timestamp tooltip (only timestamps, no other info)
+            timestamp_tooltip = self._get_timestamp_tooltip(record)
+            if timestamp_tooltip:
+                name_item.setToolTip(timestamp_tooltip)
+            
             self.records_table.setItem(row, 0, name_item)
             
             # Type column
@@ -630,16 +636,22 @@ class RecordWidget(QtWidgets.QWidget):
             elif record_type in ['NS', 'DS', 'DNSKEY']:
                 type_item.setForeground(QtGui.QColor('#E91E63'))  # Pink
                 
-            # Add tooltip with guidance if available
-            if record_type in self.RECORD_TYPE_GUIDANCE:
-                guidance = self.RECORD_TYPE_GUIDANCE[record_type]
-                type_item.setToolTip(guidance['tooltip'])
+            # Add timestamp tooltip (only timestamps, no guidance)
+            timestamp_tooltip = self._get_timestamp_tooltip(record)
+            if timestamp_tooltip:
+                type_item.setToolTip(timestamp_tooltip)
                 
             self.records_table.setItem(row, 1, type_item)
             
             # TTL column - store as number for proper numeric sorting
             ttl_item = QtWidgets.QTableWidgetItem()
             ttl_item.setData(Qt.ItemDataRole.DisplayRole, int(record.get('ttl', 0)))
+            
+            # Add timestamp tooltip (only timestamps, no other info)
+            timestamp_tooltip = self._get_timestamp_tooltip(record)
+            if timestamp_tooltip:
+                ttl_item.setToolTip(timestamp_tooltip)
+            
             self.records_table.setItem(row, 2, ttl_item)
             
             # Content column (join multiple records with newlines)
@@ -649,7 +661,12 @@ class RecordWidget(QtWidgets.QWidget):
             content_text = "\n".join(records_list)
                     
             content_item = QtWidgets.QTableWidgetItem(content_text)
-            content_item.setToolTip("\n".join(records_list))  # Show all in tooltip regardless of display mode
+            
+            # Add timestamp tooltip (only timestamps, no content)
+            timestamp_tooltip = self._get_timestamp_tooltip(record)
+            if timestamp_tooltip:
+                content_item.setToolTip(timestamp_tooltip)
+            
             self.records_table.setItem(row, 3, content_item)
             
             # Actions column
@@ -725,6 +742,43 @@ class RecordWidget(QtWidgets.QWidget):
         
         # Reapply the filter by updating the table
         self.update_records_table()
+    
+    def _get_timestamp_tooltip(self, record):
+        """Generate timestamp tooltip text for a record.
+        
+        Args:
+            record (dict): Record dictionary containing timestamp information
+            
+        Returns:
+            str: Formatted timestamp tooltip text, or empty string if no timestamps available
+        """
+        tooltip_parts = []
+        
+        # Check for creation timestamp
+        created = record.get('created')
+        if created:
+            try:
+                from datetime import datetime
+                # Parse ISO format timestamp
+                created_dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                tooltip_parts.append(f"Created: {created_dt.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            except (ValueError, AttributeError):
+                tooltip_parts.append(f"Created: {created}")
+        
+        # Check for last modified timestamp
+        touched = record.get('touched')
+        if touched:
+            try:
+                from datetime import datetime
+                # Parse ISO format timestamp
+                touched_dt = datetime.fromisoformat(touched.replace('Z', '+00:00'))
+                tooltip_parts.append(f"Last Modified: {touched_dt.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            except (ValueError, AttributeError):
+                tooltip_parts.append(f"Last Modified: {touched}")
+        
+        return '\n'.join(tooltip_parts) if tooltip_parts else ''
+    
+
 
     def show_add_record_dialog(self):
         """Show dialog to add a new record."""

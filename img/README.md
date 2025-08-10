@@ -64,6 +64,15 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 - Displays application details, developer information, and version number
 - Shows the clean, professional about interface
 
+### Record Timestamp Tooltips
+
+![Record List Tooltip](record_list_tooltip.png)
+
+**`record_list_tooltip.png`** (45 KB)
+- Demonstrates the hover tooltip feature showing record timestamps
+- Shows creation and last modification timestamps when hovering over record entries
+- Clean timestamp display without cluttering the interface
+
 ## Usage in Documentation
 
 These screenshots are referenced in the main README.md and various documentation files to provide visual context for the application's features and capabilities.
@@ -96,6 +105,7 @@ When updating or adding new screenshots:
 | `settings_window.png` | 56 KB | Configuration interface |
 | `export_window.png` | 50 KB | Export functionality |
 | `multi_profile_window.png` | 49 KB | Profile management |
+| `record_list_tooltip.png` | 45 KB | Record timestamp tooltips |
 | `about_window.png` | 38 KB | Application information |
 
-**Total**: ~525 KB for complete visual documentation of the application.
+**Total**: ~570 KB for complete visual documentation of the application.

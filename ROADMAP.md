@@ -43,6 +43,13 @@ This document outlines planned features and improvements for future releases of 
   - [x] Enhanced import modes: Append, Merge, Replace with clear terminology and behavior
   - [x] Target zone selection with auto-creation for flexible import destinations
   - [x] Real-time progress tracking with percentage and status updates
+
+- [x] **Record Timestamp Tooltips** (Added in v0.7.0-beta)
+  Enhanced user experience with hover tooltips showing DNS record metadata:
+  - [x] Creation and last modification timestamps for all DNS records
+  - [x] Clean UTC timestamp display on hover over any record table column
+  - [x] Non-intrusive interface enhancement with timestamp insights
+  - [x] Timestamps sourced directly from deSEC API cache data
   - [x] Auto-generated export filenames with timestamps for better organization
   - [x] Post-import synchronization for immediate UI updates
   - [x] API rate limiting (0-10 req/sec) to prevent timeouts during bulk operations
