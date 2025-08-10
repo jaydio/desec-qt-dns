@@ -45,7 +45,7 @@ The Import/Export feature enables you to:
 
 ## Export Functionality
 
-### How to Export a Zone
+### Single Zone Export
 
 1. **Open Import/Export Dialog**
    - Go to `File → Import/Export...`
@@ -66,6 +66,41 @@ The Import/Export feature enables you to:
    - Click **Export Zone** to start the process
    - Progress will be shown with a progress bar
    - Success/error messages will be displayed
+
+### Bulk Export (Multiple Zones)
+
+1. **Enable Bulk Export**
+   - Check the **"Enable Bulk Export"** checkbox at the top of the Export tab
+   - The interface will switch to bulk export mode
+
+2. **Select Zones**
+   - A scrollable list of all available zones will appear with checkboxes
+   - Use **"Select All"** to select all zones at once
+   - Use **"Select None"** to deselect all zones
+   - Manually check/uncheck individual zones as needed
+
+3. **Configure Bulk Export Settings**
+   - **Format**: Select the export format for all selected zones
+   - **Options**: Choose whether to include metadata
+   - All selected zones will be exported in the same format
+
+4. **Choose Output ZIP File**
+   - Click **Browse...** or **Auto-Generate** to select the output ZIP file location
+   - The ZIP file will contain individual zone files for each selected zone
+   - Auto-generated filenames include timestamp: `bulk_export_YYYYMMDD_HHMMSS.zip`
+
+5. **Export Selected Zones**
+   - Click **"Export Selected Zones (ZIP)"** to start the bulk export
+   - Progress bar shows detailed status for each zone being processed
+   - Individual zone files are created and compressed into a single ZIP archive
+   - Success/error messages will indicate how many zones were successfully exported
+
+#### Bulk Export Features
+- **ZIP Compression**: All zone files are automatically compressed into a single ZIP archive
+- **Individual Files**: Each zone is exported as a separate file within the ZIP
+- **Progress Tracking**: Real-time progress updates showing current zone being processed
+- **Error Resilience**: If one zone fails to export, the process continues with remaining zones
+- **Filename Generation**: Each zone file uses the standard naming convention with timestamps
 
 ### Export Options Explained
 

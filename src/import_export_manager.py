@@ -10,6 +10,8 @@ import json
 import yaml
 import os
 import re
+import zipfile
+import tempfile
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 import logging
@@ -622,3 +624,99 @@ class ImportExportManager:
             message = f"Records appended to existing zone. {message}"
         
         return True, message
+    
+    def export_zones_bulk(self, zone_names: List[str], format_type: str, file_path: str, 
+                         include_metadata: bool = True, progress_callback=None) -> Tuple[bool, str]:
+        """Export multiple zones to a ZIP archive.
+        
+        Args:
+            zone_names: List of zone names to export
+            format_type: Export format ('json', 'yaml', 'bind', 'djbdns')
+            file_path: Output ZIP file path
+            include_metadata: Include timestamps and metadata
+            progress_callback: Optional callback for progress updates
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            if progress_callback:
+                progress_callback(0, "Starting bulk export...")
+            
+            # Create temporary directory for individual zone files
+            with tempfile.TemporaryDirectory() as temp_dir:
+                exported_files = []
+                total_zones = len(zone_names)
+                
+                # Export each zone to temporary files
+                for i, zone_name in enumerate(zone_names):
+                    if progress_callback:
+                        progress = int((i / total_zones) * 80)  # Use 80% for individual exports
+                        progress_callback(progress, f"Exporting zone {i+1}/{total_zones}: {zone_name}")
+                    
+                    # Get zone data from cache
+                    zone_data = self.cache_manager.get_zone_by_name(zone_name)
+                    if not zone_data:
+                        logger.warning(f"Zone {zone_name} not found in cache, skipping")
+                        continue
+                    
+                    # Get records from cache
+                    records, _ = self.cache_manager.get_cached_records(zone_name)
+                    if records is None:
+                        logger.warning(f"Records for zone {zone_name} not found in cache, skipping")
+                        continue
+                    
+                    # Generate filename for this zone
+                    zone_filename = self.generate_export_filename(zone_name, format_type)
+                    temp_file_path = os.path.join(temp_dir, zone_filename)
+                    
+                    # Export zone to temporary file
+                    try:
+                        if format_type == 'json':
+                            self._export_json(zone_data, records, temp_file_path, include_metadata)
+                        elif format_type == 'yaml':
+                            self._export_yaml(zone_data, records, temp_file_path, include_metadata)
+                        elif format_type == 'bind':
+                            self._export_bind(zone_data, records, temp_file_path)
+                        elif format_type == 'djbdns':
+                            self._export_djbdns(zone_data, records, temp_file_path)
+                        else:
+                            return False, f"Unsupported export format: {format_type}"
+                        
+                        exported_files.append((zone_filename, temp_file_path))
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to export zone {zone_name}: {e}")
+                        # Continue with other zones instead of failing completely
+                        continue
+                
+                if not exported_files:
+                    return False, "No zones were successfully exported"
+                
+                if progress_callback:
+                    progress_callback(85, "Creating ZIP archive...")
+                
+                # Create ZIP archive
+                with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for zone_filename, temp_file_path in exported_files:
+                        zip_file.write(temp_file_path, zone_filename)
+                        if progress_callback:
+                            current_progress = 85 + int((len([f for f in exported_files if f[0] <= zone_filename]) / len(exported_files)) * 10)
+                            progress_callback(current_progress, f"Adding {zone_filename} to ZIP...")
+                
+                if progress_callback:
+                    progress_callback(100, "Bulk export completed successfully!")
+                
+                successful_count = len(exported_files)
+                failed_count = total_zones - successful_count
+                
+                message = f"Bulk export completed: {successful_count} zones exported to {file_path}"
+                if failed_count > 0:
+                    message += f" ({failed_count} zones failed to export)"
+                
+                logger.info(f"Bulk export completed: {successful_count}/{total_zones} zones exported")
+                return True, message
+                
+        except Exception as e:
+            logger.error(f"Bulk export failed: {e}")
+            return False, f"Bulk export failed: {str(e)}"

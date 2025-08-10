@@ -7,6 +7,7 @@ Provides UI for importing and exporting zones in various formats.
 """
 
 import os
+from datetime import datetime
 from PyQt6 import QtWidgets, QtCore, QtGui
 from PyQt6.QtCore import pyqtSignal, QThread
 from import_export_manager import ImportExportManager
@@ -31,6 +32,11 @@ class ImportExportWorker(QThread):
         try:
             if self.operation == 'export':
                 success, message = self.manager.export_zone(**self.kwargs)
+                self.finished.emit(success, message, None)
+            elif self.operation == 'bulk_export':
+                # Add progress callback to kwargs
+                self.kwargs['progress_callback'] = self._emit_progress
+                success, message = self.manager.export_zones_bulk(**self.kwargs)
                 self.finished.emit(success, message, None)
             elif self.operation == 'import':
                 # Add progress callback to kwargs
@@ -102,13 +108,87 @@ class ImportExportDialog(QtWidgets.QDialog):
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         
+        # Bulk export toggle
+        self.bulk_export_cb = QtWidgets.QCheckBox("Enable Bulk Export")
+        self.bulk_export_cb.setToolTip("Export multiple zones to a ZIP archive")
+        self.bulk_export_cb.toggled.connect(self.on_bulk_export_toggled)
+        layout.addWidget(self.bulk_export_cb)
+        
         # Zone selection
         zone_group = QtWidgets.QGroupBox("Zone Selection")
-        zone_layout = QtWidgets.QFormLayout(zone_group)
+        zone_layout = QtWidgets.QVBoxLayout(zone_group)
         
+        # Single zone selection (default mode)
+        single_zone_layout = QtWidgets.QFormLayout()
         self.export_zone_combo = QtWidgets.QComboBox()
         self.export_zone_combo.addItems(self.available_zones)
-        zone_layout.addRow("Zone to Export:", self.export_zone_combo)
+        single_zone_layout.addRow("Zone to Export:", self.export_zone_combo)
+        self.single_zone_widget = QtWidgets.QWidget()
+        self.single_zone_widget.setLayout(single_zone_layout)
+        zone_layout.addWidget(self.single_zone_widget)
+        
+        # Bulk zone selection (hidden by default)
+        self.bulk_zone_widget = QtWidgets.QWidget()
+        bulk_zone_layout = QtWidgets.QVBoxLayout(self.bulk_zone_widget)
+        
+        # Calculate zone count for UI adjustments
+        zone_count = len(self.available_zones)
+        
+        # Select all/none buttons
+        bulk_controls_layout = QtWidgets.QHBoxLayout()
+        self.select_all_btn = QtWidgets.QPushButton("Select All")
+        self.select_all_btn.clicked.connect(self.select_all_zones)
+        self.select_none_btn = QtWidgets.QPushButton("Select None")
+        self.select_none_btn.clicked.connect(self.select_no_zones)
+        bulk_controls_layout.addWidget(self.select_all_btn)
+        bulk_controls_layout.addWidget(self.select_none_btn)
+        bulk_controls_layout.addStretch()
+        
+        # Add helpful message for few zones
+        if zone_count <= 3:
+            zone_info_label = QtWidgets.QLabel(f"📁 {zone_count} zone{'s' if zone_count != 1 else ''} available for bulk export")
+            zone_info_label.setStyleSheet("QLabel { color: #666; font-style: italic; padding: 5px; }")
+            bulk_controls_layout.addWidget(zone_info_label)
+        
+        bulk_zone_layout.addLayout(bulk_controls_layout)
+        
+        # Scrollable zone list with checkboxes
+        self.zone_list_scroll = QtWidgets.QScrollArea()
+        self.zone_list_scroll.setWidgetResizable(True)
+        
+        # Adjust height based on number of zones for better appearance
+        if zone_count <= 3:
+            # For few zones, use a smaller, more compact height
+            scroll_height = min(120, max(60, zone_count * 35 + 20))
+        else:
+            # For many zones, use the larger scrollable area
+            scroll_height = 200
+        
+        self.zone_list_scroll.setMaximumHeight(scroll_height)
+        self.zone_list_scroll.setMinimumHeight(scroll_height)
+        
+        self.zone_list_widget = QtWidgets.QWidget()
+        self.zone_list_layout = QtWidgets.QVBoxLayout(self.zone_list_widget)
+        self.zone_list_layout.setSpacing(8)  # Better spacing between checkboxes
+        self.zone_list_layout.setContentsMargins(10, 10, 10, 10)  # Add some padding
+        
+        # Create checkboxes for each zone
+        self.zone_checkboxes = []
+        for zone in self.available_zones:
+            checkbox = QtWidgets.QCheckBox(zone)
+            checkbox.setStyleSheet("QCheckBox { padding: 4px; }")  # Add padding to checkboxes
+            self.zone_checkboxes.append(checkbox)
+            self.zone_list_layout.addWidget(checkbox)
+        
+        # Add stretch to push checkboxes to the top if there are few zones
+        if zone_count <= 3:
+            self.zone_list_layout.addStretch()
+        
+        self.zone_list_scroll.setWidget(self.zone_list_widget)
+        bulk_zone_layout.addWidget(self.zone_list_scroll)
+        
+        zone_layout.addWidget(self.bulk_zone_widget)
+        self.bulk_zone_widget.setVisible(False)  # Hidden by default
         
         layout.addWidget(zone_group)
         
@@ -343,20 +423,58 @@ class ImportExportDialog(QtWidgets.QDialog):
         else:
             return 'append'
     
+    def on_bulk_export_toggled(self, checked):
+        """Handle bulk export checkbox toggle."""
+        self.single_zone_widget.setVisible(not checked)
+        self.bulk_zone_widget.setVisible(checked)
+        
+        # Update export button text
+        if checked:
+            self.export_btn.setText("Export Selected Zones (ZIP)")
+        else:
+            self.export_btn.setText("Export Zone")
+    
+    def select_all_zones(self):
+        """Select all zones in the bulk export list."""
+        for checkbox in self.zone_checkboxes:
+            checkbox.setChecked(True)
+    
+    def select_no_zones(self):
+        """Deselect all zones in the bulk export list."""
+        for checkbox in self.zone_checkboxes:
+            checkbox.setChecked(False)
+    
+    def get_selected_zones(self):
+        """Get list of selected zones for bulk export."""
+        selected_zones = []
+        for checkbox in self.zone_checkboxes:
+            if checkbox.isChecked():
+                selected_zones.append(checkbox.text())
+        return selected_zones
+    
     def auto_generate_export_filename(self):
         """Auto-generate export filename based on zone and format."""
-        zone_name = self.export_zone_combo.currentText()
-        if not zone_name:
-            self.show_error("Please select a zone first.")
-            return
-        
-        format_type = self.get_selected_export_format()
-        filename = self.import_export_manager.generate_export_filename(zone_name, format_type)
-        
-        # Use file dialog to let user choose directory
-        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save Export File", filename, self._get_file_filter(format_type)
-        )
+        if self.bulk_export_cb.isChecked():
+            # For bulk export, generate ZIP filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"bulk_export_{timestamp}.zip"
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, "Save Bulk Export ZIP", filename, "ZIP files (*.zip)"
+            )
+        else:
+            # Single zone export
+            zone_name = self.export_zone_combo.currentText()
+            if not zone_name:
+                self.show_error("Please select a zone first.")
+                return
+            
+            format_type = self.get_selected_export_format()
+            filename = self.import_export_manager.generate_export_filename(zone_name, format_type)
+            
+            # Get save location from user
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, "Save Export File", filename, self._get_file_filter(format_type)
+            )
         
         if file_path:
             self.export_file_edit.setText(file_path)
@@ -382,37 +500,74 @@ class ImportExportDialog(QtWidgets.QDialog):
     
     def start_export(self):
         """Start the export operation."""
-        zone_name = self.export_zone_combo.currentText()
-        if not zone_name:
-            self.show_error("Please select a zone to export.")
-            return
-        
-        file_path = self.export_file_edit.text().strip()
-        format_type = self.get_selected_export_format()
-        
-        # Auto-generate filename if not provided
-        if not file_path:
-            filename = self.import_export_manager.generate_export_filename(zone_name, format_type)
-            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-                self, "Save Export File", filename, self._get_file_filter(format_type)
-            )
+        if self.bulk_export_cb.isChecked():
+            # Bulk export mode
+            selected_zones = self.get_selected_zones()
+            if not selected_zones:
+                self.show_error("Please select at least one zone to export.")
+                return
+            
+            file_path = self.export_file_edit.text().strip()
+            format_type = self.get_selected_export_format()
+            
+            # Auto-generate ZIP filename if not provided
             if not file_path:
-                return  # User cancelled
-        
-        include_metadata = self.include_metadata_cb.isChecked()
-        
-        # Start worker thread
-        self.set_operation_running(True)
-        self.worker = ImportExportWorker(
-            self.import_export_manager,
-            'export',
-            zone_name=zone_name,
-            format_type=format_type,
-            file_path=file_path,
-            include_metadata=include_metadata
-        )
-        self.worker.finished.connect(self.on_export_finished)
-        self.worker.start()
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"bulk_export_{timestamp}.zip"
+                file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                    self, "Save Bulk Export ZIP", filename, "ZIP files (*.zip)"
+                )
+                if not file_path:
+                    return  # User cancelled
+            
+            include_metadata = self.include_metadata_cb.isChecked()
+            
+            # Start worker thread for bulk export
+            self.set_operation_running(True)
+            self.worker = ImportExportWorker(
+                self.import_export_manager,
+                'bulk_export',
+                zone_names=selected_zones,
+                format_type=format_type,
+                file_path=file_path,
+                include_metadata=include_metadata
+            )
+            self.worker.finished.connect(self.on_export_finished)
+            self.worker.progress_update.connect(self.on_progress_update)
+            self.worker.start()
+        else:
+            # Single zone export mode
+            zone_name = self.export_zone_combo.currentText()
+            if not zone_name:
+                self.show_error("Please select a zone to export.")
+                return
+            
+            file_path = self.export_file_edit.text().strip()
+            format_type = self.get_selected_export_format()
+            
+            # Auto-generate filename if not provided
+            if not file_path:
+                filename = self.import_export_manager.generate_export_filename(zone_name, format_type)
+                file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                    self, "Save Export File", filename, self._get_file_filter(format_type)
+                )
+                if not file_path:
+                    return  # User cancelled
+            
+            include_metadata = self.include_metadata_cb.isChecked()
+            
+            # Start worker thread
+            self.set_operation_running(True)
+            self.worker = ImportExportWorker(
+                self.import_export_manager,
+                'export',
+                zone_name=zone_name,
+                format_type=format_type,
+                file_path=file_path,
+                include_metadata=include_metadata
+            )
+            self.worker.finished.connect(self.on_export_finished)
+            self.worker.start()
     
     def preview_import(self):
         """Preview the import data."""

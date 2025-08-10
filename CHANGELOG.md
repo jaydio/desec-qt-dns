@@ -5,6 +5,43 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0-beta] - 2025-08-11
+
+### Added in 0.8.0-beta
+
+- **Bulk Export Functionality** - Export multiple DNS zones simultaneously with ZIP compression
+  - Bulk export toggle with adaptive UI that switches between single and multiple zone selection modes
+  - Scrollable zone selection list with checkboxes for easy multi-zone selection
+  - Select All/Select None buttons for convenient zone management
+  - ZIP compression automatically packages multiple zone files into a single archive
+  - Real-time progress tracking during bulk export operations with detailed status updates
+  - Support for all existing export formats (JSON, YAML, BIND, djbdns) in bulk mode
+  - Graceful error handling that continues processing other zones if one fails
+  - Auto-generated ZIP filenames with timestamp for better organization
+  - Optimized UI layout that dynamically adapts based on the number of available zones
+
+### Technical Improvements in 0.8.0-beta
+
+- Enhanced ImportExportManager with `export_zones_bulk()` method for multi-zone operations
+- Updated ImportExportWorker to handle bulk export operations with progress callbacks
+- Improved ImportExportDialog UI with dynamic zone count-based layout adjustments
+- Added ZIP file creation using Python's zipfile module with compression
+- Enhanced error handling and logging for bulk operations
+- Optimized UI spacing and padding for better visual appearance with few zones
+
+### Documentation in 0.8.0-beta
+
+- Updated `doc/IMPORT_EXPORT.md` with comprehensive bulk export documentation
+- Enhanced ROADMAP.md with completed v0.8.0-beta features
+- Added detailed usage instructions for bulk export functionality
+
+### User Experience Improvements in 0.8.0-beta
+
+- Contextual UI messages showing zone count ("📁 1 zone available for bulk export")
+- Dynamic button text changes ("Export Zone" vs "Export Selected Zones (ZIP)")
+- Improved visual hierarchy and spacing for single-zone scenarios
+- Enhanced file dialog integration with format-specific filters
+
 ## [0.7.0-beta] - 2025-08-11
 
 ### Added in 0.7.0-beta

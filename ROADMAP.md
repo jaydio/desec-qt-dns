@@ -57,6 +57,19 @@ This document outlines planned features and improvements for future releases of 
   - [x] Multiple use cases: backup & recovery, DNS migration, Infrastructure-as-Code, environment sync
   - [x] Complete documentation in doc/IMPORT_EXPORT.md and doc/RATE-LIMIT.md
 
+- [x] **Bulk Export Functionality** (Added in v0.8.0-beta)
+  Export multiple DNS zones simultaneously with ZIP compression:
+  - [x] Bulk export toggle with adaptive UI for single/multiple zones
+  - [x] Scrollable zone selection list with checkboxes
+  - [x] Select All/Select None buttons for easy zone management
+  - [x] ZIP compression of multiple zone files into single archive
+  - [x] Progress tracking during bulk export operations
+  - [x] Support for all existing export formats (JSON, YAML, BIND, djbdns)
+  - [x] Graceful error handling - continues with other zones if one fails
+  - [x] Auto-generated ZIP filenames with timestamp
+  - [x] Optimized UI layout that adapts to number of available zones
+  - [x] Enhanced documentation in doc/IMPORT_EXPORT.md
+
 - [ ] **Record Creation Wizards**  
   Guided setup for common DNS record configurations, including:
   - [ ] Google Workspace / Gmail
