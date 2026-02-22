@@ -5,6 +5,25 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0-beta] - 2026-02-23
+
+### Added in 0.12.0-beta
+
+- **Account domain limit** — zone list header now shows `Total zones: N/100` where 100 is the maximum domains allowed on the account, fetched from `GET /auth/account/` after every successful sync. Falls back gracefully to `Total zones: N` when offline or if the API call fails.
+
+### Fixed in 0.12.0-beta
+
+- **DNSSEC record types** — removed `CDS` from the record type list entirely (deSEC auto-manages it; the API returns 403 on any write attempt). Added prominent warnings to `DNSKEY`, `DS`, and `CDNSKEY` tooltips explaining they are also auto-managed and that adding extra values is only safe for advanced multi-signer DNSSEC setups.
+- **Record type guidance** — eliminated duplicate `CAA` and `SSHFP` definitions that were silently overwriting each other. Normalised all 38 record type entries to consistent `<field>` placeholder style with more useful tooltips and realistic examples.
+- **Theme consistency** — removed all remaining hardcoded colour values across the UI; every widget now uses Qt palette references (`palette(highlight)`, `palette(mid)`, `palette(placeholdertext)`) so the app renders correctly in light, dark, and system themes:
+  - Log console: removed hardcoded `#f8f8f8` background; info messages adapt to the active palette
+  - Search & Replace row highlights: palette-blended tints instead of fixed pastel colours
+  - Zone list, token manager, import/export, profile, and config dialogs: grey hex values replaced with semantic palette references
+  - Status indicator colours changed to Material-style values (`#4caf50`, `#ef5350`, `#ffa726`) that are legible in both themes
+- **Navigation** — removed the separate Account menu; *Manage Tokens* moved into the File menu with surrounding separators
+- **Default window sizes** — set sensible opening sizes for the main window (1280 × 860), Record dialog (560 × 640), Import/Export dialog (600 × 740), and Create New Token dialog (600 × 750)
+- **Records table column widths** — widened the Name column default from 120 px to 220 px so long subnames like `_acme-challenge.sub` are visible without truncation on first launch
+
 ## [0.11.0-beta] - 2026-02-23
 
 ### Added in 0.11.0-beta

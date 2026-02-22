@@ -31,6 +31,9 @@ This document outlines planned features and improvements for future releases of 
   - [x] Application restart on profile switch for complete isolation
   - [x] Comprehensive documentation (doc/PROFILES.md)
 
+- [x] **Account Domain Limit Display** (in 0.12.0-beta)
+  Zone list header shows current/maximum domain count (e.g. "Total zones: 3/100") fetched live from the deSEC account API.
+
 - [x] **Batch Actions via Selectable List/Table** (in 0.11.0-beta)
   Multi-select checkboxes on the DNS records table with Select All / Select None and bulk Delete Selected (N) action.
 
