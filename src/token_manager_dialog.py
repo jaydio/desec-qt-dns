@@ -246,6 +246,7 @@ class CreateTokenDialog(QtWidgets.QDialog):
         self.setWindowTitle("Create New Token")
         self.setModal(True)
         self.setMinimumSize(600, 460)
+        self.resize(600, 750)
         self._setup_ui()
 
     def _setup_ui(self):
