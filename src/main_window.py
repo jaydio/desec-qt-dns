@@ -610,8 +610,22 @@ class MainWindow(QtWidgets.QMainWindow):
             
             # We'll cache records selectively when zones are selected instead of all at once
         else:
-            # API request failed, try to load from cache
-            self.log_message(f"Failed to sync with API: {message}", "warning")
+            # Distinguish authentication failures from transient errors
+            msg_str = str(message)
+            if "401" in msg_str or "Invalid token" in msg_str or "Unauthorized" in msg_str:
+                self.log_message(
+                    "Authentication failed (401 Invalid token). "
+                    "Please update your API token in File → Settings.",
+                    "error"
+                )
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Invalid API Token",
+                    "The API token was rejected by deSEC (HTTP 401).\n\n"
+                    "Please open File → Settings and enter a valid token.",
+                )
+            else:
+                self.log_message(f"Failed to sync with API: {message}", "warning")
             self._load_zones_from_cache()
             
     def _load_zones_from_cache(self):

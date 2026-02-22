@@ -404,7 +404,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
         self.setWindowTitle("Token Manager")
         self.setModal(True)
         self.setMinimumSize(960, 640)
-        self.resize(1060, 700)
+        self.resize(1280, 820)
         self._setup_ui()
         self._load_tokens()
 
