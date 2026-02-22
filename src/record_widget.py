@@ -78,224 +78,209 @@ class RecordWidget(QtWidgets.QWidget):
     # Record type format guidance
     RECORD_TYPE_GUIDANCE = {
         'A': {
-            'format': 'IPv4 address',
+            'format': '<ipv4-address>',
             'example': '192.0.2.1',
-            'tooltip': 'Enter an IPv4 address (e.g., 192.0.2.1)',
+            'tooltip': 'Maps a hostname to an IPv4 address.',
             'validation': r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
         },
         'AAAA': {
-            'format': 'IPv6 address',
+            'format': '<ipv6-address>',
             'example': '2001:db8::1',
-            'tooltip': 'Enter an IPv6 address (e.g., 2001:db8::1)',
+            'tooltip': 'Maps a hostname to an IPv6 address.',
             'validation': r'^[0-9a-fA-F:]+$'
         },
-        'CAA': {
-            'format': '<flags> <tag> <value>',
-            'example': '0 issue "letsencrypt.org"',
-            'tooltip': 'Certificate Authority Authorization record that specifies which CAs are allowed to issue certificates',
-            'validation': r'^\d+\s+(issue|issuewild|iodef)\s+"[^"]+"$'
-        },
-        'SSHFP': {
-            'format': '<algorithm> <type> <fingerprint>',
-            'example': '2 1 123456789abcdef67890123456789abcdef67890',
-            'tooltip': 'SSH Public Key Fingerprint record for SSH server authentication',
-            'validation': r'^[1-4]\s+[1-2]\s+[0-9a-fA-F]+$'
-        },
-        'TLSA': {
-            'format': 'usage selector matching-type certificate-data',
-            'example': '3 1 1 d2abde240d7cd3ee6b4b28c54df034b97983a1d16e8a410e4561cb106618e971',
-            'tooltip': 'TLS Authentication record to provide certificate association data for TLS servers',
-            'validation': r'^[0-3]\s+[0-1]\s+[0-2]\s+[0-9a-fA-F]+$'
-        },
         'AFSDB': {
-            'format': 'subtype hostname',
+            'format': '<subtype> <hostname.>',
             'example': '1 afsdb.example.com.',
-            'tooltip': 'Enter subtype (1 or 2) and hostname with trailing dot',
+            'tooltip': 'AFS Database record. Subtype 1 = AFS cell database server, 2 = DCE authenticated name server. Hostname must end with a trailing dot.',
             'validation': r'^[1-2]\s+[a-zA-Z0-9.-]+\.$'
         },
         'APL': {
-            'format': 'address prefix list',
-            'example': '1:192.0.2.0/24',
-            'tooltip': 'IPv4 prefixes start with 1:, IPv6 with 2:, ! negates'
+            'format': '[!]<afi>:<address>/<prefix>',
+            'example': '1:192.0.2.0/24 2:2001:db8::/32',
+            'tooltip': 'Address Prefix List. AFI 1 = IPv4, AFI 2 = IPv6. Prefix entries are space-separated. Prepend ! to negate an entry.'
         },
         'CAA': {
-            'format': 'flags tag "value"',
-            'example': '0 issue "ca.example.com"',
-            'tooltip': 'Flags (0-255), tag (issue, issuewild, iodef), value in quotes'
+            'format': '<flags> <tag> "<value>"',
+            'example': '0 issue "letsencrypt.org"',
+            'tooltip': 'Certification Authority Authorization — controls which CAs may issue certificates. Flags: 0 = advisory, 128 = critical. Tags: issue (permit issuance), issuewild (wildcards only), iodef (violation report URL). Value in double quotes.',
+            'validation': r'^\d+\s+(issue|issuewild|iodef)\s+"[^"]+"$'
         },
         'CDNSKEY': {
-            'format': 'flags protocol algorithm key',
+            'format': '<flags> <protocol> <algorithm> <base64-key>',
             'example': '257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==',
-            'tooltip': 'Enter flags, protocol, algorithm, and base64 key data'
+            'tooltip': 'Child copy of a DNSKEY, used for automated DNSSEC key rollover. Flags: 257 = KSK, 256 = ZSK. Protocol must be 3. Algorithms: 8 = RSASHA256, 13 = ECDSAP256SHA256, 15 = ED25519.'
         },
         'CDS': {
-            'format': 'key-tag algorithm digest-type digest',
-            'example': '12345 13 2 123456789abcdef67890123456789abcdef67890123456789abcdef123456789',
-            'tooltip': 'Enter key-tag, algorithm, digest-type, and digest value'
+            'format': '<key-tag> <algorithm> <digest-type> <digest-hex>',
+            'example': '12345 13 2 abc123...sha256hex...',
+            'tooltip': 'Child DS record — signals the parent zone to update its DS record (automated DNSSEC rollover). Algorithm: 13 = ECDSAP256SHA256. Digest type: 2 = SHA-256.'
         },
         'CERT': {
-            'format': 'type key-tag algorithm cert-data',
-            'example': '1 12345 1 MIICW...base64data...Q==',
-            'tooltip': 'Enter type, key-tag, algorithm, and certificate data'
+            'format': '<type> <key-tag> <algorithm> <base64-cert>',
+            'example': '1 0 0 MIIC...base64...',
+            'tooltip': 'Certificate record. Type: 1 = PKIX (X.509), 2 = SPKI, 3 = PGP. Key-tag and algorithm may be 0 for raw certificates. Certificate data is base64 encoded.'
         },
         'CNAME': {
-            'format': 'domain name with trailing dot',
-            'example': 'example.com.',
-            'tooltip': 'Enter canonical name (FQDN with trailing dot). Only one CNAME record allowed per name.',
+            'format': '<target.>',
+            'example': 'target.example.com.',
+            'tooltip': 'Canonical Name — redirects this name to another hostname. Target must be a fully-qualified domain name with trailing dot. Cannot coexist with other record types at the same name.',
             'validation': r'^.+\.$'
         },
         'DHCID': {
-            'format': 'base64 encoded identifier',
+            'format': '<base64-data>',
             'example': 'AAIBY2/AuCccgoJbsaxcQc9TUapptP69lOjxfNuVAA2kjEA=',
-            'tooltip': 'Enter base64 encoded DHCP client identifier'
+            'tooltip': 'DHCP Identifier — associates DHCP clients with DNS names to prevent conflicts. Value is base64 encoded.'
         },
         'DNAME': {
-            'format': 'domain name with trailing dot',
-            'example': 'example.com.',
-            'tooltip': 'Enter delegation name (FQDN with trailing dot)',
+            'format': '<target.>',
+            'example': 'new.example.com.',
+            'tooltip': 'Delegation Name — redirects an entire DNS subtree to another domain. All names under this owner are rewritten to be under the target. Target must be an FQDN with trailing dot.',
             'validation': r'^.+\.$'
         },
         'DNSKEY': {
-            'format': 'flags protocol algorithm key-data',
+            'format': '<flags> <protocol> <algorithm> <base64-key>',
             'example': '257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==',
-            'tooltip': 'Enter flags, protocol, algorithm, and base64 key data'
+            'tooltip': 'DNSSEC public key. Flags: 257 = KSK (Key Signing Key), 256 = ZSK (Zone Signing Key). Protocol must be 3. Algorithms: 8 = RSASHA256, 13 = ECDSAP256SHA256, 15 = ED25519.'
         },
         'DLV': {
-            'format': 'key-tag algorithm digest-type digest',
-            'example': '12345 13 2 123456789abcdef67890123456789abcdef67890123456789abcdef123456789',
-            'tooltip': 'Enter key-tag, algorithm, digest-type, and digest value'
+            'format': '<key-tag> <algorithm> <digest-type> <digest-hex>',
+            'example': '12345 13 2 abc123...sha256hex...',
+            'tooltip': 'DNSSEC Lookaside Validation (obsolete, RFC 8749). Same format as DS. Algorithm: 13 = ECDSAP256SHA256. Digest type: 2 = SHA-256.'
         },
         'DS': {
-            'format': 'key-tag algorithm digest-type digest',
-            'example': '12345 13 2 123456789abcdef67890123456789abcdef67890123456789abcdef123456789',
-            'tooltip': 'Enter key-tag, algorithm, digest-type, and digest value'
+            'format': '<key-tag> <algorithm> <digest-type> <digest-hex>',
+            'example': '12345 13 2 abc123...sha256hex...',
+            'tooltip': 'Delegation Signer — links parent and child zones in the DNSSEC chain of trust. Algorithm: 13 = ECDSAP256SHA256. Digest type: 1 = SHA-1, 2 = SHA-256.'
         },
         'EUI48': {
-            'format': 'EUI-48 address with hyphens',
+            'format': '<xx-xx-xx-xx-xx-xx>',
             'example': 'ab-cd-ef-01-23-45',
-            'tooltip': 'Enter EUI-48/MAC address with hyphens (ab-cd-ef-01-23-45)',
+            'tooltip': 'EUI-48 / MAC address record. Six hex byte pairs separated by hyphens (not colons).',
             'validation': r'^[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}$'
         },
         'EUI64': {
-            'format': 'EUI-64 address with hyphens',
+            'format': '<xx-xx-xx-xx-xx-xx-xx-xx>',
             'example': 'ab-cd-ef-01-23-45-67-89',
-            'tooltip': 'Enter EUI-64 address with hyphens (ab-cd-ef-01-23-45-67-89)',
+            'tooltip': 'EUI-64 address record. Eight hex byte pairs separated by hyphens (not colons).',
             'validation': r'^[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}$'
         },
         'HINFO': {
-            'format': '"cpu" "os"',
-            'example': '"Intel" "Windows"',
-            'tooltip': 'Enter CPU type and OS in quotes, separated by space'
+            'format': '"<cpu>" "<os>"',
+            'example': '"X86_64" "Linux"',
+            'tooltip': 'Host Information — describes the hardware CPU type and operating system. Both values must be enclosed in double quotes.'
         },
         'HTTPS': {
-            'format': 'priority target [params]',
-            'example': '1 . alpn="h2,h3"',
-            'tooltip': 'Enter priority, target (. for origin), and optional params like alpn="h2,h3"'
+            'format': '<priority> <target.> [<param>=<value> ...]',
+            'example': '1 . alpn="h2,h3" ipv4hint="192.0.2.1"',
+            'tooltip': 'HTTPS Service Binding. Priority 0 = alias mode (like CNAME). Use . as target to inherit the owner name. Common params: alpn, ipv4hint, ipv6hint, port, ech.'
         },
         'KX': {
-            'format': 'priority target',
+            'format': '<preference> <exchanger.>',
             'example': '10 kx.example.com.',
-            'tooltip': 'Enter priority and key exchanger host with trailing dot'
+            'tooltip': 'Key Exchanger — specifies a host for IPSEC key exchange. Lower preference value = higher priority. Exchanger must be an FQDN with trailing dot.'
         },
         'L32': {
-            'format': 'preference locator',
+            'format': '<preference> <locator>',
             'example': '10 10.1.2.3',
-            'tooltip': 'Enter preference (0-65535) and IPv4 address as locator'
+            'tooltip': 'ILNP 32-bit Locator. Lower preference = higher priority. Locator is an IPv4 address.'
         },
         'L64': {
-            'format': 'preference locator',
+            'format': '<preference> <locator>',
             'example': '10 2001:db8:1:2',
-            'tooltip': 'Enter preference (0-65535) and IPv6 address as locator'
+            'tooltip': 'ILNP 64-bit Locator. Lower preference = higher priority. Locator is the upper 64 bits of an IPv6 address (four 16-bit hex groups).'
         },
         'LOC': {
-            'format': 'coordinates',
-            'example': '51 30 12.748 N 0 7 39.611 W 0.00m 0.00m 0.00m 0.00m',
-            'tooltip': 'Enter lat lon altitude and optional precision parameters'
+            'format': '<d> <m> <s> <N/S> <d> <m> <s> <E/W> <alt>m [<size>m [<hp>m [<vp>m]]]',
+            'example': '51 30 12.748 N 0 7 39.611 W 0.00m 1m 10000m 10m',
+            'tooltip': 'Geographic location. Degrees/minutes/seconds for latitude (N/S) and longitude (E/W), then altitude in metres. Optional: size of location, horizontal precision, vertical precision (all in metres).'
         },
         'LP': {
-            'format': 'preference FQDN',
-            'example': '10 example.com.',
-            'tooltip': 'Enter preference and FQDN with trailing dot'
+            'format': '<preference> <fqdn.>',
+            'example': '10 l32.example.com.',
+            'tooltip': 'ILNP Locator Pointer — points to a name that has L32/L64 records. Lower preference = higher priority. FQDN must end with a trailing dot.'
         },
         'MX': {
-            'format': 'priority mail server with trailing dot',
+            'format': '<priority> <mailserver.>',
             'example': '10 mail.example.com.',
-            'tooltip': 'Enter priority (0-65535) followed by mail server FQDN with trailing dot'
+            'tooltip': 'Mail Exchange — specifies the mail server for this domain. Lower priority = preferred. Mail server must be an FQDN with trailing dot. Add one entry per line for multiple servers.'
         },
         'NAPTR': {
-            'format': 'order preference flags service regexp replacement',
-            'example': '100 10 "u" "sip+E2U" "!^.*$!sip:info@example.com!" .',
-            'tooltip': 'Enter order, preference, flags, service, regexp, and replacement (quoted as needed)'
+            'format': '<order> <pref> "<flags>" "<service>" "<regexp>" <replacement.>',
+            'example': '100 10 "u" "E2U+sip" "!^.*$!sip:info@example.com!" .',
+            'tooltip': 'Naming Authority Pointer — used for ENUM, SIP, and URI rewriting. Order and preference are integers. Flags: u = terminal URI, s = SRV lookup, a = A/AAAA lookup, empty = continue. Use . as replacement if the regexp is terminal.'
         },
         'NID': {
-            'format': 'preference value',
+            'format': '<preference> <node-id>',
             'example': '10 0014:4fff:ff20:ee64',
-            'tooltip': 'Enter preference and 64-bit node identifier value'
+            'tooltip': 'ILNP Node Identifier. Lower preference = higher priority. Node ID is a 64-bit value as four 16-bit hex groups separated by colons.'
         },
         'NS': {
-            'format': 'nameserver with trailing dot',
+            'format': '<nameserver.>',
             'example': 'ns1.example.com.',
-            'tooltip': 'Enter nameserver FQDN with trailing dot',
+            'tooltip': 'Name Server — delegates the zone to an authoritative nameserver. Must be an FQDN with trailing dot. Note: apex NS records at the zone root are managed by deSEC and cannot be modified here.',
             'validation': r'^.+\.$'
         },
         'OPENPGPKEY': {
-            'format': 'base64 encoded key data',
-            'example': 'mQENBFVHm5sBCAD...base64data....',
-            'tooltip': 'Enter OpenPGP public key data in base64 format'
+            'format': '<base64-key-data>',
+            'example': 'mQENBFVHm5sBCADH...base64...',
+            'tooltip': 'OpenPGP public key for a user, looked up via the email local-part hash as the subdomain (e.g. hash._openpgpkey.example.com). Paste the full base64-encoded transferable public key.'
         },
         'PTR': {
-            'format': 'target domain with trailing dot',
-            'example': 'example.com.',
-            'tooltip': 'Enter target domain name with trailing dot',
+            'format': '<target.>',
+            'example': 'host.example.com.',
+            'tooltip': 'Pointer — maps an IP address back to a hostname (reverse DNS). Used under in-addr.arpa (IPv4) or ip6.arpa (IPv6). Target must be an FQDN with trailing dot.',
             'validation': r'^.+\.$'
         },
         'RP': {
-            'format': 'mbox-dname txt-dname',
-            'example': 'admin.example.com. text.example.com.',
-            'tooltip': 'Enter mailbox domain name and text domain name, both with trailing dots'
+            'format': '<mbox-dname.> <txt-dname.>',
+            'example': 'hostmaster.example.com. info.example.com.',
+            'tooltip': 'Responsible Person. First field is the mailbox address with @ replaced by . (e.g. hostmaster.example.com = hostmaster@example.com). Second field is a name with a TXT record containing contact info. Both must end with a trailing dot.'
         },
         'SMIMEA': {
-            'format': 'usage selector type certificate',
-            'example': '3 0 0 MIIC...base64data...Q==',
-            'tooltip': 'Enter usage, selector, type, and certificate data'
+            'format': '<usage> <selector> <matching-type> <data>',
+            'example': '3 1 1 abc123...sha256hex...',
+            'tooltip': 'S/MIME Certificate Association (DANE for email). Usage: 0=PKIX-TA, 1=PKIX-EE, 2=DANE-TA, 3=DANE-EE. Selector: 0=full cert, 1=SubjectPublicKeyInfo. Matching type: 0=raw (base64), 1=SHA-256 hex, 2=SHA-512 hex.'
         },
         'SPF': {
-            'format': 'SPF record in quotes',
+            'format': '"v=spf1 <mechanisms> <qualifier>all"',
             'example': '"v=spf1 mx a ip4:192.0.2.0/24 -all"',
-            'tooltip': 'Enter SPF policy in quotes (same format as TXT record)'
+            'tooltip': 'Sender Policy Framework (legacy record type — use TXT records with SPF content instead). Value must be in double quotes. Mechanisms: mx, a, ip4:, ip6:, include:. Qualifiers: + pass, - fail, ~ softfail, ? neutral.'
         },
         'SRV': {
-            'format': 'priority weight port target',
-            'example': '0 5 443 example.com.',
-            'tooltip': 'Specify location of service (e.g., XMPP, SIP). All values must be integers (0-65535) and the target must end with a dot.',
+            'format': '<priority> <weight> <port> <target.>',
+            'example': '10 20 443 svc.example.com.',
+            'tooltip': 'Service Locator. Lower priority = preferred. Weight distributes load among equal-priority entries (higher weight = more traffic). Port is the service port number. Target must be an FQDN with trailing dot.',
             'validation': r'^[0-9]+\s+[0-9]+\s+[0-9]+\s+[a-zA-Z0-9.\-_]+\.$'
         },
         'SSHFP': {
-            'format': 'algorithm type fingerprint',
-            'example': '2 1 123456789abcdef67890123456789abcdef67890',
-            'tooltip': 'Enter algorithm (1=RSA, 2=DSA, 3=ECDSA, 4=ED25519), type (1=SHA-1, 2=SHA-256), and fingerprint'
+            'format': '<algorithm> <type> <fingerprint-hex>',
+            'example': '4 2 abc123...sha256hex...',
+            'tooltip': 'SSH Fingerprint — allows SSH clients to verify host keys via DNS. Algorithm: 1=RSA, 2=DSA, 3=ECDSA, 4=ED25519. Type: 1=SHA-1, 2=SHA-256. Fingerprint is hex without colons.',
+            'validation': r'^[1-4]\s+[1-2]\s+[0-9a-fA-F]+$'
         },
         'SVCB': {
-            'format': 'priority target [params]',
-            'example': '1 web.example.com. alpn="h2,h3" port=443',
-            'tooltip': 'Enter priority, target hostname, and optional service parameters'
+            'format': '<priority> <target.> [<param>=<value> ...]',
+            'example': '1 backend.example.com. alpn="h2" port=8443',
+            'tooltip': 'Service Binding (generalised form of HTTPS). Priority 0 = alias mode. Use . as target to inherit the owner name. Common params: alpn, port, ipv4hint, ipv6hint, ech.'
         },
         'TLSA': {
-            'format': 'usage selector type certificate',
-            'example': '3 0 1 123456789abcdef67890123456789abcdef67890123456789abcdef123456789',
-            'tooltip': 'Enter usage (0-3), selector (0-1), type (0-2), and certificate data'
+            'format': '<usage> <selector> <matching-type> <data>',
+            'example': '3 1 1 abc123...sha256hex...',
+            'tooltip': 'TLS Certificate Association (DANE). Usage: 0=PKIX-TA, 1=PKIX-EE, 2=DANE-TA, 3=DANE-EE. Selector: 0=full cert, 1=SubjectPublicKeyInfo. Matching type: 0=raw, 1=SHA-256 hex, 2=SHA-512 hex.',
+            'validation': r'^[0-3]\s+[0-1]\s+[0-2]\s+[0-9a-fA-F]+$'
         },
         'TXT': {
-            'format': 'text in quotes',
-            'example': '"This is a text record"',
-            'tooltip': 'Enter text record content in quotes ("example")',
+            'format': '"<text content>"',
+            'example': '"v=spf1 include:example.com -all"',
+            'tooltip': 'Text record — stores arbitrary text data. Content must be enclosed in double quotes. For multiple values (e.g. long SPF), enter one quoted string per line. Backslash-escape any double quotes within the content.',
             'validation': r'^".*"$'
         },
         'URI': {
-            'format': 'priority weight target',
-            'example': '10 1 "https://example.com/"',
-            'tooltip': 'Enter priority, weight, and URI target in quotes'
-        }
+            'format': '<priority> <weight> "<uri>"',
+            'example': '10 1 "https://www.example.com/"',
+            'tooltip': 'URI record — maps a service name to a URI. Lower priority = preferred. Higher weight = more traffic among equal-priority entries. URI must be enclosed in double quotes.'
+        },
     }
     
     def __init__(self, api_client, cache_manager, config_manager=None, parent=None):
@@ -437,7 +422,7 @@ class RecordWidget(QtWidgets.QWidget):
         
         # Set table style to match zone list
         self.records_table.setStyleSheet(
-            "QTableWidget { border: 1px solid #ccc; }"
+            "QTableWidget { border: 1px solid palette(mid); }"
         )
         
         # Set the table to take all available space
@@ -581,12 +566,13 @@ class RecordWidget(QtWidgets.QWidget):
             
             # Only fetch from API if online and cache is stale (or we need to refresh)
             # Default sync interval to 5 minutes for staleness check
-            if self.api_client.is_online and self.cache_manager.is_cache_stale(cache_timestamp, 5):
+            _can_sync = self.api_client.is_online and not self.config_manager.get_offline_mode()
+            if _can_sync and self.cache_manager.is_cache_stale(cache_timestamp, 5):
                 # Use worker for background API update
                 self.fetch_records_async()
-            
+
         # Only if cache is empty and we're online, fetch records asynchronously
-        elif self.api_client.is_online:
+        elif self.api_client.is_online and not self.config_manager.get_offline_mode():
             # Use worker for background API update
             self.fetch_records_async()
             # Show loading message
@@ -1188,7 +1174,7 @@ class RecordDialog(QtWidgets.QDialog):
     def setup_ui(self):
         """Set up the user interface."""
         self.setWindowTitle("DNS Record Editor")
-        self.setMinimumWidth(500)
+        self.setMinimumSize(560, 640)
         layout = QtWidgets.QVBoxLayout(self)
         
         # Form layout
@@ -1541,7 +1527,7 @@ class RecordDialog(QtWidgets.QDialog):
         # Update validation status
         if all_valid:
             self.validation_status.setText("✓ Valid record format")
-            self.validation_status.setStyleSheet("color: green;")
+            self.validation_status.setStyleSheet("color: #4caf50;")
         else:
             unique_errors = set(errors)  # Remove duplicates
             self.validation_status.setText("⚠️ " + "\n".join(unique_errors))
