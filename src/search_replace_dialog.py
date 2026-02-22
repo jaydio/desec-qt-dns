@@ -395,7 +395,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
 
         _regex_help = QtWidgets.QLabel("(?)")
         _regex_help.setStyleSheet(
-            "QLabel { color: #1565c0; font-weight: bold; }"
+            "QLabel { color: palette(highlight); font-weight: bold; }"
         )
         _regex_help.setToolTip(
             "<html><body>"
@@ -441,7 +441,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         results_layout = QtWidgets.QVBoxLayout(results_group)
 
         self._results_label = QtWidgets.QLabel("Run a search to see matching records.")
-        self._results_label.setStyleSheet("color: #888;")
+        self._results_label.setStyleSheet("color: palette(placeholdertext);")
         results_layout.addWidget(self._results_label)
 
         self._table = QtWidgets.QTableWidget()
@@ -560,7 +560,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         self._progress_bar.setVisible(False)
         progress_row.addWidget(self._progress_bar)
         self._status_label = QtWidgets.QLabel("")
-        self._status_label.setStyleSheet("color: #555;")
+        self._status_label.setStyleSheet("")
         progress_row.addWidget(self._status_label)
         outer.addLayout(progress_row)
 
@@ -601,7 +601,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
 
         self._table.setRowCount(0)
         self._results_label.setText("Searching…")
-        self._results_label.setStyleSheet("color: #888;")
+        self._results_label.setStyleSheet("color: palette(placeholdertext);")
         self._search_btn.setEnabled(False)
         self._set_replace_enabled(False)
         self._export_btn.setEnabled(False)
@@ -634,7 +634,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
 
         self._results_label.setText(message)
         self._results_label.setStyleSheet(
-            "color: #2e7d32;" if matches else "color: #888;"
+            "color: #4caf50;" if matches else "color: palette(placeholdertext);"
         )
         self._populate_table(matches)
         self._set_replace_enabled(bool(matches))
@@ -818,7 +818,13 @@ class SearchReplaceDialog(QtWidgets.QDialog):
     # ------------------------------------------------------------------
 
     def _on_record_done(self, row_idx, success, msg):
-        color = QtGui.QColor('#c8e6c9') if success else QtGui.QColor('#ffcdd2')
+        base = self._table.palette().color(QtGui.QPalette.ColorRole.Base)
+        tint = QtGui.QColor(0, 180, 0) if success else QtGui.QColor(200, 0, 0)
+        color = QtGui.QColor(
+            int(tint.red()   * 0.20 + base.red()   * 0.80),
+            int(tint.green() * 0.20 + base.green() * 0.80),
+            int(tint.blue()  * 0.20 + base.blue()  * 0.80),
+        )
         for col in range(self._table.columnCount()):
             item = self._table.item(row_idx, col)
             if item:
@@ -836,7 +842,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
             f"{op_name} complete — {summary}. Re-run search to refresh results."
         )
         self._results_label.setStyleSheet(
-            "color: #2e7d32;" if not failed else "color: #e65100;"
+            "color: #4caf50;" if not failed else "color: #ffa726;"
         )
 
     def _append_log(self, entry):

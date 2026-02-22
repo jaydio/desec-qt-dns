@@ -519,7 +519,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
             "Select a token to view and edit details."
         )
         self._detail_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._detail_placeholder.setStyleSheet("color: #888;")
+        self._detail_placeholder.setStyleSheet("color: palette(placeholdertext);")
         layout.addWidget(self._detail_placeholder)
 
         # --- Read-only info ---
@@ -621,7 +621,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
             "Select a token to view and manage its RRset policies."
         )
         self._policy_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._policy_placeholder.setStyleSheet("color: #888;")
+        self._policy_placeholder.setStyleSheet("color: palette(placeholdertext);")
         layout.addWidget(self._policy_placeholder)
 
         desc = QtWidgets.QLabel(
@@ -629,7 +629,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
             "and record type. Policies with all-null fields act as a default catch-all."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #555; font-size: 11px;")
+        desc.setStyleSheet("color: palette(placeholdertext); font-size: 11px;")
         layout.addWidget(desc)
 
         self._policy_table = QtWidgets.QTableWidget()

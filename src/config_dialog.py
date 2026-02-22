@@ -82,7 +82,7 @@ class ConfigDialog(QtWidgets.QDialog):
         
         # Add help text for rate limit
         rate_limit_help = QtWidgets.QLabel("Lower values prevent API timeouts during bulk operations")
-        rate_limit_help.setStyleSheet("color: #666; font-size: 11px;")
+        rate_limit_help.setStyleSheet("color: palette(placeholdertext); font-size: 11px;")
         rate_limit_help.setWordWrap(True)
         form_layout.addRow("", rate_limit_help)
         

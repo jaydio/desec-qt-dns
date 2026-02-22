@@ -16,12 +16,11 @@ logger = logging.getLogger(__name__)
 class LogWidget(QtWidgets.QWidget):
     """Widget for displaying application logs with collapsibility support."""
     
-    # Define colors for different log levels
+    # Colors for non-default log levels (info uses palette text color)
     LOG_COLORS = {
-        'info': '#000000',    # Black
         'warning': '#FF9900',  # Orange
-        'error': '#FF0000',    # Red
-        'success': '#008800'   # Green
+        'error':   '#FF0000',  # Red
+        'success': '#008800',  # Green
     }
     
     def __init__(self, parent=None):
@@ -50,7 +49,7 @@ class LogWidget(QtWidgets.QWidget):
         
         # Add message count label
         self.count_label = QtWidgets.QLabel("0 messages")
-        self.count_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.count_label.setStyleSheet("color: palette(placeholdertext); font-size: 11px;")
         header_layout.addWidget(self.count_label)
         
         header_layout.addStretch()
@@ -71,14 +70,7 @@ class LogWidget(QtWidgets.QWidget):
         self.log_text.document().setMaximumBlockCount(500)  # Limit to 500 lines
         layout.addWidget(self.log_text)
         
-        # Apply initial styling
-        self.log_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #f8f8f8;
-                border: 1px solid #ddd;
-                font-family: monospace;
-            }
-        """)
+        self.log_text.setStyleSheet("QTextEdit { font-family: monospace; }")
     
     def add_message(self, message, level='info'):
         """
@@ -88,15 +80,20 @@ class LogWidget(QtWidgets.QWidget):
             message (str): Message text
             level (str): Message level (info, warning, error, success)
         """
-        if level not in self.LOG_COLORS:
-            level = 'info'
-            
-        color = self.LOG_COLORS[level]
+        # Use palette text colour for info so it adapts to any theme
+        if level in self.LOG_COLORS:
+            color = self.LOG_COLORS[level]
+        else:
+            color = self.palette().color(QtGui.QPalette.ColorRole.Text).name()
+
         timestamp = time.strftime("%H:%M:%S")
         
+        # Dim the timestamp relative to the current text colour
+        dim = self.palette().color(QtGui.QPalette.ColorRole.PlaceholderText).name()
+
         # Format the log entry
         html = f'<div style="margin: 2px 0;">'
-        html += f'<span style="color: #666;">[{timestamp}]</span> '
+        html += f'<span style="color: {dim};">[{timestamp}]</span> '
         html += f'<span style="color: {color};">{message}</span>'
         html += '</div>'
         

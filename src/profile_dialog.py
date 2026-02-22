@@ -56,7 +56,7 @@ class ProfileDialog(QtWidgets.QDialog):
             "Use profiles to manage multiple deSEC accounts or environments."
         )
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #666; margin-bottom: 15px;")
+        desc_label.setStyleSheet("color: palette(placeholdertext); margin-bottom: 15px;")
         layout.addWidget(desc_label)
         
         # Profiles list and controls

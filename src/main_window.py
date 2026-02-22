@@ -89,19 +89,19 @@ class MainWindow(QtWidgets.QMainWindow):
     def setup_ui(self):
         """Set up the user interface."""
         self.setWindowTitle("deSEC Qt DNS Manager")
-        self.resize(1200, 700)
+        self.resize(1280, 860)
         
         # Create status bar
-        self.statusBar().setStyleSheet("QStatusBar { border-top: 1px solid #ccc; }")
+        self.statusBar().setStyleSheet("QStatusBar { border-top: 1px solid palette(mid); }")
         
         # Create widgets for the status bar
         self.last_sync_label = QtWidgets.QLabel("Last sync: Never")
         self.sync_status_label = QtWidgets.QLabel("INITIALIZING")
         
         # Set up status label style
-        self.online_style = "QLabel { color: green; font-weight: bold; }"
-        self.offline_style = "QLabel { color: red; font-weight: bold; }"
-        self.initializing_style = "QLabel { color: orange; font-weight: bold; }"
+        self.online_style = "QLabel { color: #4caf50; font-weight: bold; }"
+        self.offline_style = "QLabel { color: #ef5350; font-weight: bold; }"
+        self.initializing_style = "QLabel { color: #ffa726; font-weight: bold; }"
         self.sync_status_label.setStyleSheet(self.initializing_style)
         
         # Add last sync time to the regular (left) side of the status bar
@@ -233,16 +233,25 @@ class MainWindow(QtWidgets.QMainWindow):
         search_replace_action.triggered.connect(self.show_search_replace_dialog)
         file_menu.addAction(search_replace_action)
 
+        # Manage Tokens
+        file_menu.addSeparator()
+        self.manage_tokens_action = QtGui.QAction("Manage &Tokens...", self)
+        self.manage_tokens_action.setStatusTip("Create, view, and manage API tokens")
+        self.manage_tokens_action.setEnabled(False)
+        self.manage_tokens_action.setToolTip("Checking token permissions…")
+        self.manage_tokens_action.triggered.connect(self.show_token_manager_dialog)
+        file_menu.addAction(self.manage_tokens_action)
+
         # Add separator
         file_menu.addSeparator()
-        
+
         # Quit action
         quit_action = QtGui.QAction("&Quit", self)
         quit_action.setShortcut("Ctrl+Q")
         quit_action.setStatusTip("Quit the application")
         quit_action.triggered.connect(self._confirm_quit_dialog)
         file_menu.addAction(quit_action)
-        
+
         # Profile menu (only show if profile manager is available)
         if self.profile_manager:
             profile_menu = menu_bar.addMenu("&Profile")
@@ -260,16 +269,6 @@ class MainWindow(QtWidgets.QMainWindow):
             manage_profiles_action.setStatusTip("Create, switch, rename, or delete profiles")
             manage_profiles_action.triggered.connect(self.show_profile_dialog)
             profile_menu.addAction(manage_profiles_action)
-
-        # Account menu
-        account_menu = menu_bar.addMenu("&Account")
-
-        self.manage_tokens_action = QtGui.QAction("Manage &Tokens...", self)
-        self.manage_tokens_action.setStatusTip("Create, view, and manage API tokens")
-        self.manage_tokens_action.setEnabled(False)
-        self.manage_tokens_action.setToolTip("Checking token permissions…")
-        self.manage_tokens_action.triggered.connect(self.show_token_manager_dialog)
-        account_menu.addAction(self.manage_tokens_action)
 
         # Connection menu
         connection_menu = menu_bar.addMenu("&Connection")

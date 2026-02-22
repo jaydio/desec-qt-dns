@@ -147,7 +147,7 @@ class ImportExportDialog(QtWidgets.QDialog):
         # Add helpful message for few zones
         if zone_count <= 3:
             zone_info_label = QtWidgets.QLabel(f"📁 {zone_count} zone{'s' if zone_count != 1 else ''} available for bulk export")
-            zone_info_label.setStyleSheet("QLabel { color: #666; font-style: italic; padding: 5px; }")
+            zone_info_label.setStyleSheet("QLabel { color: palette(placeholdertext); font-style: italic; padding: 5px; }")
             bulk_controls_layout.addWidget(zone_info_label)
         
         bulk_zone_layout.addLayout(bulk_controls_layout)
@@ -297,7 +297,7 @@ class ImportExportDialog(QtWidgets.QDialog):
             "If the zone doesn't exist, it will be created automatically."
         )
         target_help.setWordWrap(True)
-        target_help.setStyleSheet("color: #666; font-size: 11px;")
+        target_help.setStyleSheet("color: palette(placeholdertext); font-size: 11px;")
         target_layout.addRow(target_help)
         
         layout.addWidget(target_group)
@@ -327,7 +327,7 @@ class ImportExportDialog(QtWidgets.QDialog):
             "• Replace: Delete all existing records (except NS/SOA) before importing"
         )
         existing_help.setWordWrap(True)
-        existing_help.setStyleSheet("color: #666; font-size: 11px;")
+        existing_help.setStyleSheet("color: palette(placeholdertext); font-size: 11px;")
         existing_layout.addWidget(existing_help)
         
         layout.addWidget(existing_group)
@@ -735,13 +735,13 @@ class ImportExportDialog(QtWidgets.QDialog):
         """Show success message."""
         QtWidgets.QMessageBox.information(self, "Success", message)
         self.status_label.setText("Operation completed successfully.")
-        self.status_label.setStyleSheet("color: green;")
+        self.status_label.setStyleSheet("color: #4caf50;")
     
     def show_error(self, message):
         """Show error message."""
         QtWidgets.QMessageBox.critical(self, "Error", message)
         self.status_label.setText("Operation failed.")
-        self.status_label.setStyleSheet("color: red;")
+        self.status_label.setStyleSheet("color: #ef5350;")
     
     def closeEvent(self, event):
         """Handle dialog close event."""

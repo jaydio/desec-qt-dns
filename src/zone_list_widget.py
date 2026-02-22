@@ -192,9 +192,9 @@ class ZoneListWidget(QtWidgets.QWidget):
         self.zone_list_view.setAlternatingRowColors(True)
         self.zone_list_view.setUniformItemSizes(True)
         self.zone_list_view.setStyleSheet(
-            "QListView { border: 1px solid #ccc; }"
+            "QListView { border: 1px solid palette(mid); }"
             "QListView::item { padding: 5px; }"
-            "QListView::item:selected { background-color: #3daee9; color: white; }"
+            "QListView::item:selected { background-color: palette(highlight); color: palette(highlighted-text); }"
         )
         
         # Set the model for the view
@@ -399,7 +399,7 @@ class ZoneListWidget(QtWidgets.QWidget):
             "You must own this domain or have the rights to manage it."
         )
         explanation.setWordWrap(True)
-        explanation.setStyleSheet("color: #666; font-style: italic;")
+        explanation.setStyleSheet("color: palette(placeholdertext); font-style: italic;")
         layout.addWidget(explanation)
         
         # Add buttons
