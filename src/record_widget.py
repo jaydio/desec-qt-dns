@@ -403,10 +403,10 @@ class RecordWidget(QtWidgets.QWidget):
         self.records_table.horizontalHeader().setSectionResizeMode(COL_CONTENT, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.records_table.horizontalHeader().setSectionResizeMode(COL_ACTIONS, QtWidgets.QHeaderView.ResizeMode.Interactive)
 
-        # Set initial default widths
+        # Set initial default widths (matched to typical column proportions)
         self.records_table.setColumnWidth(COL_CHECK,   28)
-        self.records_table.setColumnWidth(COL_NAME,    120)
-        self.records_table.setColumnWidth(COL_TYPE,    100)
+        self.records_table.setColumnWidth(COL_NAME,    220)
+        self.records_table.setColumnWidth(COL_TYPE,    90)
         self.records_table.setColumnWidth(COL_TTL,     80)
         self.records_table.setColumnWidth(COL_ACTIONS, 140)
         self.records_table.verticalHeader().setVisible(False)
