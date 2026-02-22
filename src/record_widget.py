@@ -69,11 +69,14 @@ class RecordWidget(QtWidgets.QWidget):
     
     # Supported record types
     SUPPORTED_TYPES = [
-        'A', 'AAAA', 'AFSDB', 'APL', 'CAA', 'CDNSKEY', 'CDS', 'CERT', 'CNAME', 'DHCID',
+        'A', 'AAAA', 'AFSDB', 'APL', 'CAA', 'CDNSKEY', 'CERT', 'CNAME', 'DHCID',
         'DNAME', 'DNSKEY', 'DLV', 'DS', 'EUI48', 'EUI64', 'HINFO', 'HTTPS', 'KX', 'L32',
         'L64', 'LOC', 'LP', 'MX', 'NAPTR', 'NID', 'NS', 'OPENPGPKEY', 'PTR', 'RP',
         'SMIMEA', 'SPF', 'SRV', 'SSHFP', 'SVCB', 'TLSA', 'TXT', 'URI'
     ]
+    # Note: CDS is auto-managed by deSEC and cannot be created via the API (returns 403).
+    # DNSKEY, DS, CDNSKEY are also auto-managed but the API allows adding extra values
+    # for advanced multi-signer DNSSEC setups only.
     
     # Record type format guidance
     RECORD_TYPE_GUIDANCE = {
@@ -109,12 +112,7 @@ class RecordWidget(QtWidgets.QWidget):
         'CDNSKEY': {
             'format': '<flags> <protocol> <algorithm> <base64-key>',
             'example': '257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==',
-            'tooltip': 'Child copy of a DNSKEY, used for automated DNSSEC key rollover. Flags: 257 = KSK, 256 = ZSK. Protocol must be 3. Algorithms: 8 = RSASHA256, 13 = ECDSAP256SHA256, 15 = ED25519.'
-        },
-        'CDS': {
-            'format': '<key-tag> <algorithm> <digest-type> <digest-hex>',
-            'example': '12345 13 2 abc123...sha256hex...',
-            'tooltip': 'Child DS record — signals the parent zone to update its DS record (automated DNSSEC rollover). Algorithm: 13 = ECDSAP256SHA256. Digest type: 2 = SHA-256.'
+            'tooltip': 'WARNING: deSEC auto-manages CDNSKEY records. Only add extra values for advanced multi-signer DNSSEC setups — misuse can break DNSSEC for your domain.\n\nChild copy of a DNSKEY used for automated key rollover. Flags: 257 = KSK, 256 = ZSK. Protocol must be 3. Algorithms: 8 = RSASHA256, 13 = ECDSAP256SHA256, 15 = ED25519.'
         },
         'CERT': {
             'format': '<type> <key-tag> <algorithm> <base64-cert>',
@@ -141,7 +139,7 @@ class RecordWidget(QtWidgets.QWidget):
         'DNSKEY': {
             'format': '<flags> <protocol> <algorithm> <base64-key>',
             'example': '257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==',
-            'tooltip': 'DNSSEC public key. Flags: 257 = KSK (Key Signing Key), 256 = ZSK (Zone Signing Key). Protocol must be 3. Algorithms: 8 = RSASHA256, 13 = ECDSAP256SHA256, 15 = ED25519.'
+            'tooltip': 'WARNING: deSEC auto-manages DNSKEY records. Only add extra values for advanced multi-signer DNSSEC setups — misuse can break DNSSEC for your domain.\n\nDNSSEC public key. Flags: 257 = KSK (Key Signing Key), 256 = ZSK (Zone Signing Key). Protocol must be 3. Algorithms: 8 = RSASHA256, 13 = ECDSAP256SHA256, 15 = ED25519.'
         },
         'DLV': {
             'format': '<key-tag> <algorithm> <digest-type> <digest-hex>',
@@ -151,7 +149,7 @@ class RecordWidget(QtWidgets.QWidget):
         'DS': {
             'format': '<key-tag> <algorithm> <digest-type> <digest-hex>',
             'example': '12345 13 2 abc123...sha256hex...',
-            'tooltip': 'Delegation Signer — links parent and child zones in the DNSSEC chain of trust. Algorithm: 13 = ECDSAP256SHA256. Digest type: 1 = SHA-1, 2 = SHA-256.'
+            'tooltip': 'WARNING: deSEC auto-manages DS records. Only add extra values for advanced multi-signer DNSSEC setups — misuse can break DNSSEC for your domain.\n\nDelegation Signer — links parent and child zones in the DNSSEC chain of trust. Algorithm: 13 = ECDSAP256SHA256. Digest type: 1 = SHA-1, 2 = SHA-256.'
         },
         'EUI48': {
             'format': '<xx-xx-xx-xx-xx-xx>',
@@ -1195,7 +1193,6 @@ class RecordDialog(QtWidgets.QDialog):
             'APL': 'APL (Address Prefix List)',
             'CAA': 'CAA (Certification Authority Authorization)',
             'CDNSKEY': 'CDNSKEY (Child DNS Key)',
-            'CDS': 'CDS (Child Delegation Signer)',
             'CERT': 'CERT (Certificate)',
             'CNAME': 'CNAME (Canonical Name)',
             'DHCID': 'DHCID (DHCP Identifier)',
