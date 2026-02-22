@@ -190,6 +190,15 @@ class APIClient:
         success, _ = self._make_request('GET', '/domains/')
         return success
     
+    def get_account_info(self):
+        """
+        Get account information including domain limit.
+
+        Returns:
+            tuple: (success, account data dict or error message)
+        """
+        return self._make_request('GET', '/auth/account/')
+
     def get_zones(self):
         """
         Get all domains (zones) for the authenticated user.

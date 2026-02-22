@@ -419,6 +419,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if is_online:
             # Run permission check in background whenever we know we're online
             self._check_token_management_permission()
+            self._fetch_account_limit()
 
         if manual_check:
             if is_online:
@@ -427,6 +428,32 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self.statusBar().showMessage("API connection failed", 5000)
                 self.log_message("API connection check failed - API is unreachable", "error")
+
+    def _fetch_account_limit(self):
+        """Fetch account info (domain limit) from the API in the background."""
+        class _AccountSignals(QtCore.QObject):
+            result_ready = QtCore.pyqtSignal(object)  # int limit or None
+
+        class _AccountWorker(QtCore.QRunnable):
+            def __init__(self, api_client):
+                super().__init__()
+                self.api_client = api_client
+                self.signals = _AccountSignals()
+
+            def run(self):
+                success, data = self.api_client.get_account_info()
+                if success and isinstance(data, dict):
+                    self.signals.result_ready.emit(data.get('limit_domains'))
+                else:
+                    self.signals.result_ready.emit(None)
+
+        worker = _AccountWorker(self.api_client)
+        worker.signals.result_ready.connect(self._handle_account_limit)
+        self.thread_pool.start(worker)
+
+    def _handle_account_limit(self, limit):
+        """Apply the fetched domain limit to the zone list widget."""
+        self.zone_list.set_domain_limit(limit)
 
     def _check_token_management_permission(self):
         """Check whether the current token has perm_manage_tokens (runs in background)."""
@@ -560,14 +587,15 @@ class MainWindow(QtWidgets.QMainWindow):
             # Update timestamp for last successful sync
             self.last_sync_time = time.time()
 
-            # Refresh token management permission in the background
+            # Refresh token management permission and account limits in the background
             self._check_token_management_permission()
+            self._fetch_account_limit()
 
             self.log_message(f"Retrieved {len(zones)} zones from API", "success")
             
             # Update zone list with retrieved zones - directly update the model
             self.zone_list.zone_model.update_zones(zones)
-            self.zone_list.zone_count_label.setText(f"Total zones: {len(zones)}")
+            self.zone_list.zone_count_label.setText(f"Total zones: {self.zone_list._zone_count_text(len(zones))}")
             
             # Select the first zone if available
             if len(zones) > 0 and self.zone_list.zone_list_view.model().rowCount() > 0:

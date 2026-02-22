@@ -132,6 +132,7 @@ class ZoneListWidget(QtWidgets.QWidget):
         self.thread_pool = QThreadPool.globalInstance()
         self.loading_indicator = None
         self._edit_enabled = True  # Default to enabled
+        self._domain_limit = None  # Set once account info is fetched
         
         # Set up the UI
         self.setup_ui()
@@ -246,7 +247,7 @@ class ZoneListWidget(QtWidgets.QWidget):
         if cached_zones is not None:
             self.zone_model.update_zones(cached_zones)
             # Update the zone count
-            self.zone_count_label.setText(f"Total zones: {len(cached_zones)}")
+            self.zone_count_label.setText(f"Total zones: {self._zone_count_text(len(cached_zones))}")
         
         # Then fetch fresh data in the background
         worker = LoadZonesWorker(self.api_client, self.cache_manager)
@@ -282,7 +283,7 @@ class ZoneListWidget(QtWidgets.QWidget):
             filtered = self.zone_model.rowCount()
             
             # Update zone count with optimized text setting (only when different)
-            new_text = f"Showing {filtered} of {total} zones" if self.search_field.text() else f"Total zones: {total}"
+            new_text = f"Showing {filtered} of {self._zone_count_text(total)} zones" if self.search_field.text() else f"Total zones: {self._zone_count_text(total)}"
             if self.zone_count_label.text() != new_text:
                 self.zone_count_label.setText(new_text)
             
@@ -322,11 +323,31 @@ class ZoneListWidget(QtWidgets.QWidget):
             total = len(self.zone_model.zones)
             
             if filter_text:
-                self.zone_count_label.setText(f"Showing {count} of {total} zones")
+                self.zone_count_label.setText(f"Showing {count} of {self._zone_count_text(total)} zones")
             else:
-                self.zone_count_label.setText(f"Total zones: {total}")
+                self.zone_count_label.setText(f"Total zones: {self._zone_count_text(total)}")
             self.set_edit_enabled(self._edit_enabled)
-    
+
+    def set_domain_limit(self, limit):
+        """Update the account domain limit and refresh the count label.
+
+        Args:
+            limit (int or None): Maximum domains allowed for the account
+        """
+        self._domain_limit = limit
+        total = len(self.zone_model.zones)
+        filtered = self.zone_model.rowCount()
+        if self.search_field.text():
+            self.zone_count_label.setText(f"Showing {filtered} of {self._zone_count_text(total)}")
+        else:
+            self.zone_count_label.setText(f"Total zones: {self._zone_count_text(total)}")
+
+    def _zone_count_text(self, count):
+        """Format zone count, appending limit when known (e.g. '3/100')."""
+        if self._domain_limit is not None:
+            return f"{count}/{self._domain_limit}"
+        return str(count)
+
     def on_zone_selection_changed(self, current: QtCore.QModelIndex, previous: QtCore.QModelIndex) -> None:
         """Handler for zone selection changed event.
         Args:
