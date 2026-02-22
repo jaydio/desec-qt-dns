@@ -296,12 +296,12 @@ class APIClient:
     def delete_record(self, domain_name, subname, type):
         """
         Delete a DNS record.
-        
+
         Args:
             domain_name (str): Domain name
             subname (str): Subdomain (or empty string for apex)
             type (str): Record type (A, CNAME, MX, TXT, etc.)
-            
+
         Returns:
             tuple: (success, empty dict or error message)
         """
@@ -310,5 +310,163 @@ class APIClient:
             endpoint = f'/domains/{domain_name}/rrsets/@/{type}/'
         else:
             endpoint = f'/domains/{domain_name}/rrsets/{subname}/{type}/'
-            
+
         return self._make_request('DELETE', endpoint)
+
+    # -------------------------------------------------------------------------
+    # Token management
+    # -------------------------------------------------------------------------
+
+    def list_tokens(self):
+        """
+        List all API tokens for the authenticated account.
+        Requires perm_manage_tokens on the current token.
+
+        Returns:
+            tuple: (success, list of token dicts or error message)
+        """
+        return self._make_request('GET', '/auth/tokens/')
+
+    def create_token(self, name, perm_create_domain=True, perm_delete_domain=True,
+                     perm_manage_tokens=False, max_age=None, max_unused_period=None,
+                     allowed_subnets=None, auto_policy=False):
+        """
+        Create a new API token.
+
+        Args:
+            name (str): Human-readable label for the token
+            perm_create_domain (bool): Allow creating domains
+            perm_delete_domain (bool): Allow deleting domains
+            perm_manage_tokens (bool): Allow managing tokens
+            max_age (str or None): Age-based expiration e.g. '30 00:00:00'
+            max_unused_period (str or None): Inactivity expiration e.g. '7 00:00:00'
+            allowed_subnets (list or None): List of CIDR strings; None = unrestricted
+            auto_policy (bool): Auto-create permissive policy on domain creation
+
+        Returns:
+            tuple: (success, token dict including one-time secret 'token' field)
+        """
+        data = {
+            'name': name,
+            'perm_create_domain': perm_create_domain,
+            'perm_delete_domain': perm_delete_domain,
+            'perm_manage_tokens': perm_manage_tokens,
+            'auto_policy': auto_policy,
+        }
+        if max_age is not None:
+            data['max_age'] = max_age
+        if max_unused_period is not None:
+            data['max_unused_period'] = max_unused_period
+        if allowed_subnets is not None:
+            data['allowed_subnets'] = allowed_subnets
+        return self._make_request('POST', '/auth/tokens/', data)
+
+    def get_token(self, token_id):
+        """
+        Retrieve a specific API token by ID.
+
+        Args:
+            token_id (str): Token UUID
+
+        Returns:
+            tuple: (success, token dict or error message)
+        """
+        return self._make_request('GET', f'/auth/tokens/{token_id}/')
+
+    def update_token(self, token_id, **fields):
+        """
+        Update an existing API token (partial update).
+
+        Args:
+            token_id (str): Token UUID
+            **fields: Fields to update (name, perm_*, max_age, max_unused_period,
+                      allowed_subnets, auto_policy)
+
+        Returns:
+            tuple: (success, updated token dict or error message)
+        """
+        return self._make_request('PATCH', f'/auth/tokens/{token_id}/', fields)
+
+    def delete_token(self, token_id):
+        """
+        Delete an API token.
+
+        Args:
+            token_id (str): Token UUID
+
+        Returns:
+            tuple: (success, empty dict or error message)
+        """
+        return self._make_request('DELETE', f'/auth/tokens/{token_id}/')
+
+    # -------------------------------------------------------------------------
+    # Token policy management
+    # -------------------------------------------------------------------------
+
+    def list_token_policies(self, token_id):
+        """
+        List all RRset policies for a token.
+
+        Args:
+            token_id (str): Token UUID
+
+        Returns:
+            tuple: (success, list of policy dicts or error message)
+        """
+        return self._make_request('GET', f'/auth/tokens/{token_id}/policies/rrsets/')
+
+    def create_token_policy(self, token_id, domain=None, subname=None,
+                            type_=None, perm_write=False):
+        """
+        Create an RRset policy for a token.
+
+        Args:
+            token_id (str): Token UUID
+            domain (str or None): Domain name; None = default policy
+            subname (str or None): Subname; None = match all
+            type_ (str or None): Record type; None = match all
+            perm_write (bool): Grant write permission
+
+        Returns:
+            tuple: (success, policy dict or error message)
+        """
+        # Always include domain, subname, and type — even when None.
+        # The API requires these fields to be present (as JSON null means "match all").
+        data = {
+            'perm_write': perm_write,
+            'domain': domain,
+            'subname': subname,
+            'type': type_,
+        }
+        return self._make_request('POST', f'/auth/tokens/{token_id}/policies/rrsets/', data)
+
+    def update_token_policy(self, token_id, policy_id, **fields):
+        """
+        Update an existing RRset policy (partial update).
+
+        Args:
+            token_id (str): Token UUID
+            policy_id (str): Policy UUID
+            **fields: Fields to update (domain, subname, type, perm_write)
+
+        Returns:
+            tuple: (success, updated policy dict or error message)
+        """
+        return self._make_request(
+            'PATCH', f'/auth/tokens/{token_id}/policies/rrsets/{policy_id}/', fields
+        )
+
+    def delete_token_policy(self, token_id, policy_id):
+        """
+        Delete an RRset policy from a token.
+
+        Args:
+            token_id (str): Token UUID
+            policy_id (str): Policy UUID
+
+        Returns:
+            tuple: (success, empty dict or error message)
+        """
+        return self._make_request(
+            'DELETE', f'/auth/tokens/{token_id}/policies/rrsets/{policy_id}/'
+        )

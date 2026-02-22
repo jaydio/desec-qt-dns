@@ -5,6 +5,33 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0-beta] - 2026-02-23
+
+### Added in 0.9.0-beta
+
+- **Token Management Interface** — full API token lifecycle management via a new Account menu
+  - View all tokens associated with the account in a sortable table (name, created, last used, validity, permission flags)
+  - Create new tokens with configurable permissions, expiration, and subnet restrictions
+  - Edit existing token settings: name, permissions, max age, max unused period, allowed subnets, auto-policy
+  - Delete tokens with a safety confirmation warning
+  - Secure one-time secret display: token value shown exactly once after creation, requires explicit acknowledgement before the dialog closes
+  - Copy-to-clipboard button for both token IDs and newly created secrets
+- **Per-Token RRset Policy Management** — fine-grained domain/record access control
+  - View all RRset policies for any selected token
+  - Add, edit, and delete policies with domain, subname, type, and write-permission fields
+  - Null/default fields displayed in italics as "(default)" for clarity
+- **Account Menu** — new top-level menu between Profile and Connection
+  - "Manage Tokens..." action gated behind a background permission check
+  - Automatically enabled/disabled based on whether the current token has `perm_manage_tokens`
+  - Tooltip explains why the action is disabled when permissions are insufficient
+
+### Technical Improvements in 0.9.0-beta
+
+- Added 9 new API methods to `APIClient`: `list_tokens`, `create_token`, `get_token`, `update_token`, `delete_token`, `list_token_policies`, `create_token_policy`, `update_token_policy`, `delete_token_policy`
+- New `src/token_manager_dialog.py` with four dialog classes: `TokenManagerDialog`, `CreateTokenDialog`, `TokenSecretDialog`, `TokenPolicyDialog`
+- Background permission check (`_check_token_management_permission`) triggered after successful sync and connectivity checks — non-blocking, uses existing QThreadPool
+- All token/policy API calls inside the dialog run in background workers to keep the UI responsive
+
 ## [0.8.0-beta] - 2025-08-11
 
 ### Added in 0.8.0-beta

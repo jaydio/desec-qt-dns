@@ -9,15 +9,15 @@ This document outlines planned features and improvements for future releases of 
 - [x] **Theme Support**  (in 0.3.4-beta)
   Light, dark, and system-based themes for better visual integration and accessibility.
 
-- [ ] **Token Management**  
+- [x] **Token Management** (in 0.9.0-beta)
   Comprehensive token management interface with the following capabilities:
-  - [ ] Create, view, edit, and delete API tokens
-  - [ ] Set token permissions (create/delete domains, manage tokens)
-  - [ ] Configure token policies for fine-grained access control
-  - [ ] Set token expiration (max age and max unused period)
-  - [ ] Restrict token usage by IP address/subnet
-  - [ ] View token usage statistics (last used, created date)
-  - [ ] Bulk operations for token management
+  - [x] Create, view, edit, and delete API tokens
+  - [x] Set token permissions (create/delete domains, manage tokens)
+  - [x] Configure token policies for fine-grained access control
+  - [x] Set token expiration (max age and max unused period)
+  - [x] Restrict token usage by IP address/subnet
+  - [x] View token usage statistics (last used, created date)
+  - [ ] Bulk operations for token management (future)
 
 - [ ] **Global Search and Replace**  
   Quickly search across all or selected zones and records, with optional batch replace functionality for efficient bulk edits.

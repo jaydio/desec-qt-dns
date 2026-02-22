@@ -9,6 +9,7 @@ A Qt6 desktop application for managing DNS zones and records using the deSEC DNS
 ## ✨ Key Features
 
 ### Core Functionality
+- **Token Management** - Full API token lifecycle management: create, view, edit, and delete tokens with fine-grained permission and RRset policy control
 - **Multi-Profile Support** - Manage multiple deSEC accounts or environments with isolated tokens, cache, and settings per profile
 - **Enhanced Import/Export** - Backup, migrate, and manage DNS configurations with multiple formats (JSON, YAML, BIND, djbdns), real-time progress tracking, and flexible import modes
 - **Comprehensive DNS Management** - Full support for all standard DNS record types with intuitive zone and record management
@@ -95,6 +96,36 @@ The application supports multiple user profiles, allowing you to manage differen
 
 For detailed information about multi-profile features, see [doc/PROFILES.md](doc/PROFILES.md).
 
+## 🔑 Token Management (v0.9.0-beta)
+
+The application provides a full token management interface accessible via **Account → Manage Tokens...** in the menu. The menu item is automatically enabled only when the current token has `perm_manage_tokens`.
+
+### Token Operations
+
+- **View** all tokens with name, creation date, last used, validity status, and permission flags
+- **Create** new tokens with configurable permissions, expiration limits, and subnet restrictions — a secure default policy (no access) is created automatically
+- **Edit** token settings: name, permissions, expiration (max age / max unused period), and allowed subnets
+- **Delete** tokens with a safety confirmation
+
+### Permissions per Token
+
+Each token can be independently configured with:
+- `perm_create_domain` — allow creating DNS zones
+- `perm_delete_domain` — allow deleting DNS zones
+- `perm_manage_tokens` — allow managing tokens (required to use this interface)
+- `auto_policy` — automatically create a permissive RRset policy when a domain is created with this token
+
+### RRset Policies
+
+Fine-grained per-token access control at the domain/subname/type level:
+- **Default policy** (all fields null) — created automatically on new token creation with no write access
+- **Specific policies** — define write access for a particular domain, subname, and/or record type
+- Add, edit, and delete policies directly from the Policies tab in the Token Manager
+
+### Security Defaults
+
+All new tokens are created with all permissions unchecked and a default deny-all RRset policy. Users explicitly opt in to any access they want to grant.
+
 ## 📁 Enhanced Import/Export Functionality (v0.6.0-beta)
 
 The application supports importing and exporting DNS zones and records in multiple formats with advanced features for backup, migration, and Infrastructure-as-Code workflows.
@@ -156,6 +187,7 @@ You can edit the API URL and authentication token through the application's conf
 
 Detailed documentation is available in the `doc/` directory:
 
+- [Token Management](CHANGELOG.md) - See v0.9.0-beta in the changelog for full token management details
 - [Multi-Profile Support](doc/PROFILES.md) - Complete guide to managing multiple deSEC accounts and environments
 - [Import/Export Functionality](doc/IMPORT_EXPORT.md) - Comprehensive documentation for backup, migration, and Infrastructure-as-Code workflows
 - [API Rate Limiting](doc/RATE-LIMIT.md) - Guide to configurable API rate limiting for bulk operations

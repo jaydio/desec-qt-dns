@@ -240,7 +240,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Profile menu (only show if profile manager is available)
         if self.profile_manager:
             profile_menu = menu_bar.addMenu("&Profile")
-            
+
             # Current profile info
             current_profile = self.profile_manager.get_current_profile_info()
             if current_profile:
@@ -248,13 +248,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_profile_action.setEnabled(False)  # Just for display
                 profile_menu.addAction(current_profile_action)
                 profile_menu.addSeparator()
-            
+
             # Manage profiles action
             manage_profiles_action = QtGui.QAction("&Manage Profiles...", self)
             manage_profiles_action.setStatusTip("Create, switch, rename, or delete profiles")
             manage_profiles_action.triggered.connect(self.show_profile_dialog)
             profile_menu.addAction(manage_profiles_action)
-        
+
+        # Account menu
+        account_menu = menu_bar.addMenu("&Account")
+
+        self.manage_tokens_action = QtGui.QAction("Manage &Tokens...", self)
+        self.manage_tokens_action.setStatusTip("Create, view, and manage API tokens")
+        self.manage_tokens_action.setEnabled(False)
+        self.manage_tokens_action.setToolTip("Checking token permissions…")
+        self.manage_tokens_action.triggered.connect(self.show_token_manager_dialog)
+        account_menu.addAction(self.manage_tokens_action)
+
         # Connection menu
         connection_menu = menu_bar.addMenu("&Connection")
         
@@ -394,13 +404,17 @@ class MainWindow(QtWidgets.QMainWindow):
         
     def _handle_connectivity_result(self, is_online, manual_check):
         """Handle connectivity check result.
-        
+
         Args:
             is_online (bool): True if API is online, False otherwise
             manual_check (bool): True if check was manually triggered
         """
         self.update_connection_status(is_online)
-        
+
+        if is_online:
+            # Run permission check in background whenever we know we're online
+            self._check_token_management_permission()
+
         if manual_check:
             if is_online:
                 self.statusBar().showMessage("API connection successful", 5000)
@@ -408,6 +422,46 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self.statusBar().showMessage("API connection failed", 5000)
                 self.log_message("API connection check failed - API is unreachable", "error")
+
+    def _check_token_management_permission(self):
+        """Check whether the current token has perm_manage_tokens (runs in background)."""
+        class _PermSignals(QtCore.QObject):
+            result_ready = QtCore.pyqtSignal(bool)
+
+        class _PermWorker(QtCore.QRunnable):
+            def __init__(self, api_client):
+                super().__init__()
+                self.api_client = api_client
+                self.signals = _PermSignals()
+
+            def run(self):
+                success, _ = self.api_client.list_tokens()
+                self.signals.result_ready.emit(success)
+
+        worker = _PermWorker(self.api_client)
+        worker.signals.result_ready.connect(self._handle_token_perm_result)
+        self.thread_pool.start(worker)
+
+    def _handle_token_perm_result(self, has_permission):
+        """Update the Manage Tokens action state based on permission check.
+
+        Args:
+            has_permission (bool): True if current token can manage tokens
+        """
+        if hasattr(self, 'manage_tokens_action'):
+            self.manage_tokens_action.setEnabled(has_permission)
+            if has_permission:
+                self.manage_tokens_action.setToolTip("")
+            else:
+                self.manage_tokens_action.setToolTip(
+                    "Token management requires perm_manage_tokens on the current token"
+                )
+
+    def show_token_manager_dialog(self):
+        """Show the token manager dialog."""
+        from token_manager_dialog import TokenManagerDialog
+        dialog = TokenManagerDialog(self.api_client, self)
+        dialog.exec()
     
     def update_connection_status(self, is_online):
         """Update the connection status display.
@@ -500,7 +554,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # Cache zones for offline access (already done in the worker)
             # Update timestamp for last successful sync
             self.last_sync_time = time.time()
-            
+
+            # Refresh token management permission in the background
+            self._check_token_management_permission()
+
             self.log_message(f"Retrieved {len(zones)} zones from API", "success")
             
             # Update zone list with retrieved zones - directly update the model
@@ -817,7 +874,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "<h2 align=\"center\">deSEC Qt DNS Manager</h2>"
             "<p align=\"center\">A desktop application for managing DNS zones and records<br/>"
             "using the deSEC API.</p>"
-            "<p align=\"center\"><b>Version 0.8.0-beta</b></p>"
+            "<p align=\"center\"><b>Version 0.9.0-beta</b></p>"
             "<hr/>"
             "<p align=\"center\">🚀 Developed by <b>JD Bungart</b></p>"
             "<p align=\"center\">✉️ <a href=\"mailto:me@jdneer.com\">me@jdneer.com</a></p>"
@@ -867,7 +924,7 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def show_changelog(self):
         """Show the changelog in the user's browser."""
-        changelog_url = "https://github.com/jaydio/desec-qt6-dns-manager/blob/main/CHANGELOG.md"
+        changelog_url = "https://github.com/jaydio/desec-qt-dns/blob/master/CHANGELOG.md"
         QtGui.QDesktopServices.openUrl(QtCore.QUrl(changelog_url))
         self.log_message("Changelog opened in browser", "info")
     
