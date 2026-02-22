@@ -434,7 +434,6 @@ class RecordWidget(QtWidgets.QWidget):
         self.records_table.setSortingEnabled(True)
         self.records_table.sortByColumn(COL_NAME, QtCore.Qt.SortOrder.AscendingOrder)
         self.records_table.cellDoubleClicked.connect(self.handle_cell_double_clicked)
-        self.records_table.itemChanged.connect(self._on_item_changed)
         
         # Set table style to match zone list
         self.records_table.setStyleSheet(
@@ -674,15 +673,18 @@ class RecordWidget(QtWidgets.QWidget):
         # Ensure edit controls reflect offline/online state after table update
         self.set_edit_enabled(self.is_online and not self.config_manager.get_offline_mode())
         
-        self.records_table.blockSignals(True)
         for row, record in enumerate(filtered_records):
             self.records_table.insertRow(row)
 
-            # Checkbox column
-            chk = QtWidgets.QTableWidgetItem()
-            chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-            chk.setCheckState(Qt.CheckState.Unchecked)
-            self.records_table.setItem(row, COL_CHECK, chk)
+            # Checkbox column — native centered QCheckBox via cell widget
+            check_container = QtWidgets.QWidget()
+            check_layout = QtWidgets.QHBoxLayout(check_container)
+            check_layout.setContentsMargins(0, 0, 0, 0)
+            check_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cb = QtWidgets.QCheckBox()
+            cb.stateChanged.connect(self._on_checkbox_state_changed)
+            check_layout.addWidget(cb)
+            self.records_table.setCellWidget(row, COL_CHECK, check_container)
 
             # Name column (subname)
             name = record.get('subname', '') or '@'
@@ -753,7 +755,6 @@ class RecordWidget(QtWidgets.QWidget):
 
             self.records_table.setCellWidget(row, COL_ACTIONS, actions_widget)
 
-        self.records_table.blockSignals(False)
         self._update_bulk_btn()
 
         # Preserve content column stretch
@@ -970,9 +971,50 @@ class RecordWidget(QtWidgets.QWidget):
     # Bulk selection and delete
     # ------------------------------------------------------------------
 
-    def _on_item_changed(self, item):
-        if item.column() == COL_CHECK:
-            self._update_bulk_btn()
+    def _on_checkbox_state_changed(self):
+        """Called when any row's QCheckBox changes state."""
+        sender = self.sender()
+        for row in range(self.records_table.rowCount()):
+            widget = self.records_table.cellWidget(row, COL_CHECK)
+            if widget:
+                cb = widget.findChild(QtWidgets.QCheckBox)
+                if cb is sender:
+                    self._update_row_highlight(row, cb.isChecked())
+                    break
+        self._update_bulk_btn()
+
+    def _row_highlight_color(self):
+        """Return a soft highlight QColor derived from the current palette."""
+        palette = self.records_table.palette()
+        hl = palette.color(QtGui.QPalette.ColorRole.Highlight)
+        base = palette.color(QtGui.QPalette.ColorRole.Base)
+        # Blend: 25% highlight + 75% base — works for any theme
+        return QtGui.QColor(
+            int(hl.red()   * 0.25 + base.red()   * 0.75),
+            int(hl.green() * 0.25 + base.green() * 0.75),
+            int(hl.blue()  * 0.25 + base.blue()  * 0.75),
+        )
+
+    def _update_row_highlight(self, row, checked):
+        """Highlight or clear a row depending on its checked state."""
+        widget = self.records_table.cellWidget(row, COL_CHECK)
+        if checked:
+            bg_color = self._row_highlight_color()
+            bg_hex = bg_color.name()
+            if widget:
+                widget.setStyleSheet(f"background-color: {bg_hex};")
+            for col in (COL_NAME, COL_TYPE, COL_TTL, COL_CONTENT):
+                item = self.records_table.item(row, col)
+                if item:
+                    item.setBackground(bg_color)
+        else:
+            if widget:
+                widget.setStyleSheet("")
+            for col in (COL_NAME, COL_TYPE, COL_TTL, COL_CONTENT):
+                item = self.records_table.item(row, col)
+                if item:
+                    # Remove the role so Qt restores alternating-row colours
+                    item.setData(Qt.ItemDataRole.BackgroundRole, None)
 
     def _update_bulk_btn(self):
         if not hasattr(self, 'bulk_delete_btn'):
@@ -986,33 +1028,41 @@ class RecordWidget(QtWidgets.QWidget):
         self.select_none_btn.setEnabled(has_rows and self.can_edit)
 
     def _select_all_records(self):
-        self.records_table.blockSignals(True)
         for row in range(self.records_table.rowCount()):
-            item = self.records_table.item(row, COL_CHECK)
-            if item:
-                item.setCheckState(Qt.CheckState.Checked)
-        self.records_table.blockSignals(False)
+            widget = self.records_table.cellWidget(row, COL_CHECK)
+            if widget:
+                cb = widget.findChild(QtWidgets.QCheckBox)
+                if cb:
+                    cb.blockSignals(True)
+                    cb.setChecked(True)
+                    cb.blockSignals(False)
+                    self._update_row_highlight(row, True)
         self._update_bulk_btn()
 
     def _select_none_records(self):
-        self.records_table.blockSignals(True)
         for row in range(self.records_table.rowCount()):
-            item = self.records_table.item(row, COL_CHECK)
-            if item:
-                item.setCheckState(Qt.CheckState.Unchecked)
-        self.records_table.blockSignals(False)
+            widget = self.records_table.cellWidget(row, COL_CHECK)
+            if widget:
+                cb = widget.findChild(QtWidgets.QCheckBox)
+                if cb:
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    cb.blockSignals(False)
+                    self._update_row_highlight(row, False)
         self._update_bulk_btn()
 
     def _get_checked_records(self):
         result = []
         for row in range(self.records_table.rowCount()):
-            chk = self.records_table.item(row, COL_CHECK)
-            if chk and chk.checkState() == Qt.CheckState.Checked:
-                name_item = self.records_table.item(row, COL_NAME)
-                if name_item:
-                    record = name_item.data(Qt.ItemDataRole.UserRole)
-                    if record:
-                        result.append(record)
+            widget = self.records_table.cellWidget(row, COL_CHECK)
+            if widget:
+                cb = widget.findChild(QtWidgets.QCheckBox)
+                if cb and cb.isChecked():
+                    name_item = self.records_table.item(row, COL_NAME)
+                    if name_item:
+                        record = name_item.data(Qt.ItemDataRole.UserRole)
+                        if record:
+                            result.append(record)
         return result
 
     def delete_selected_records(self):
