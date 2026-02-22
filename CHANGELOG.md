@@ -10,25 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added in 0.10.0-beta
 
 - **Global Search & Replace** — search across all DNS zones simultaneously and apply bulk changes
-  - Filter by any combination of subname (contains), record type, content (contains), and TTL (exact)
+  - Filter by any combination of subname (contains), record type, content (contains), TTL (exact), and zone name
+  - **Regex mode** — toggle "Use regex" to use Python regular expressions for subname, content, and zone filters; includes an inline `(?)` help icon with examples
   - Results table with per-row checkboxes — select exactly which records to update
   - Select All / Select None buttons for quick selection management
   - Content find & replace: string substitution within record values (e.g. replace an old IP)
   - Subname rename: transparently creates new rrset and deletes the old one
   - TTL bulk update: set a new TTL across all matched records in one operation
   - Content and TTL changes can be combined in a single pass
+  - **Delete Selected** — permanently delete all checked records with a confirmation dialog
+  - **Export Results** — save the current results table to CSV or JSON
+  - **Change Log panel** — collapsible log showing every CONTENT / RENAME / TTL / DELETED change with old→new values; Clear Log button resets it
   - Row-level feedback: rows turn green on success, red on failure with error tooltip
   - Progress bar with per-zone status during both search and replace phases
-  - Offline-safe: search works against cache when offline; Apply button disabled when offline
-  - Confirmation dialog before any destructive replace operation
+  - Offline-safe: search works against cache when offline; Apply and Delete buttons disabled when offline
+  - Confirmation dialog before any destructive replace or delete operation
+  - Auto-refreshes the currently open zone's records after the dialog closes
   - File → Global Search & Replace... in the menu
 
 ### Technical Improvements in 0.10.0-beta
 
-- New `src/search_replace_dialog.py` with `SearchReplaceDialog`, `_SearchWorker(QThread)`, `_ReplaceWorker(QThread)`
+- New `src/search_replace_dialog.py` with `SearchReplaceDialog`, `_SearchWorker(QThread)`, `_ReplaceWorker(QThread)`, `_DeleteWorker(QThread)`
 - Search loads records from cache first, falls back to API per zone — no blocking the UI
-- Replace worker invalidates per-domain cache after each zone's records are updated
+- Replace and delete workers invalidate per-domain cache after each zone's records are updated
 - Subname rename uses create-then-delete pattern against the rrset API endpoints
+- Empty replacement guard: replacements that would produce empty record values are rejected
+- Regex patterns pre-validated before worker starts; invalid patterns shown with a clear error
 
 ## [0.9.0-beta] - 2026-02-23
 

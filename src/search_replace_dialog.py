@@ -392,10 +392,39 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         search_grid.addWidget(self._zone_edit, 2, 1)
 
         self._regex_check = QtWidgets.QCheckBox("Use regex")
-        self._regex_check.setToolTip(
-            "Interpret Subname, Content, and Zone filters as regular expressions."
+
+        _regex_help = QtWidgets.QLabel("(?)")
+        _regex_help.setStyleSheet(
+            "QLabel { color: #1565c0; font-weight: bold; }"
         )
-        search_grid.addWidget(self._regex_check, 2, 2, 1, 2)
+        _regex_help.setToolTip(
+            "<html><body>"
+            "When enabled, Subname / Content / Zone filters are treated as "
+            "Python regular expressions (case-insensitive).<br><br>"
+            "<b>Examples:</b><br>"
+            "<table cellspacing='2'>"
+            "<tr><td><tt>^mail</tt></td><td>&nbsp;— subname starts with 'mail'</td></tr>"
+            "<tr><td><tt>^(www|ftp)$</tt></td><td>&nbsp;— subname is exactly 'www' or 'ftp'</td></tr>"
+            "<tr><td><tt>^_</tt></td><td>&nbsp;— subname starts with underscore (e.g. _dmarc, _domainkey)</td></tr>"
+            "<tr><td><tt>^$</tt></td><td>&nbsp;— apex/root record (empty subname)</td></tr>"
+            "<tr><td><tt>\\d+</tt></td><td>&nbsp;— contains one or more digits</td></tr>"
+            "<tr><td><tt>1\\.2\\.3\\.\\d+</tt></td><td>&nbsp;— IPs like 1.2.3.4 – 1.2.3.255</td></tr>"
+            "<tr><td><tt>v=spf1</tt></td><td>&nbsp;— content contains SPF record</td></tr>"
+            "<tr><td><tt>\\.de$</tt></td><td>&nbsp;— zones ending in .de (zone filter)</td></tr>"
+            "<tr><td><tt>\\.(com|net|org)$</tt></td><td>&nbsp;— zones with a specific TLD</td></tr>"
+            "</table><br><br>"
+            "Invalid patterns are rejected before the search starts."
+            "</body></html>"
+        )
+
+        _regex_row = QtWidgets.QWidget()
+        _regex_layout = QtWidgets.QHBoxLayout(_regex_row)
+        _regex_layout.setContentsMargins(0, 0, 0, 0)
+        _regex_layout.setSpacing(4)
+        _regex_layout.addWidget(self._regex_check)
+        _regex_layout.addWidget(_regex_help)
+        _regex_layout.addStretch()
+        search_grid.addWidget(_regex_row, 2, 2, 1, 2)
 
         self._search_btn = QtWidgets.QPushButton("Search All Zones")
         self._search_btn.setDefault(True)

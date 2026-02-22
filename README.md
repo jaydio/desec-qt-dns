@@ -9,7 +9,7 @@ A Qt6 desktop application for managing DNS zones and records using the deSEC DNS
 ## ✨ Key Features
 
 ### Core Functionality
-- **Global Search & Replace** - Search records across all zones by subname, type, content, or TTL, then bulk-replace content, rename subnames, or update TTLs in one operation
+- **Global Search & Replace** - Search records across all zones by subname, type, content, TTL, or zone name (plain text or regex), then bulk-replace content, rename subnames, update TTLs, delete records, or export results — all with a full change log
 - **Token Management** - Full API token lifecycle management: create, view, edit, and delete tokens with fine-grained permission and RRset policy control
 - **Multi-Profile Support** - Manage multiple deSEC accounts or environments with isolated tokens, cache, and settings per profile
 - **Enhanced Import/Export** - Backup, migrate, and manage DNS configurations with multiple formats (JSON, YAML, BIND, djbdns), real-time progress tracking, and flexible import modes
