@@ -5,6 +5,28 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0-beta] - 2026-02-23
+
+### Added in 0.11.0-beta
+
+- **Batch Actions via Selectable List** — multi-select checkboxes on the DNS records table for bulk operations
+  - New leftmost checkbox column on the records table; all rows start unchecked
+  - **Select All** / **Select None** buttons in the toolbar for one-click selection management
+  - **Delete Selected (N)** button with live count; red-styled to signal destructive action
+  - Confirmation dialog before bulk delete listing the record count
+  - Background `_BulkDeleteWorker` thread keeps the UI responsive during large deletes
+  - Per-record success/failure logged individually; summary logged on completion
+  - Cache invalidated and table refreshed automatically after bulk delete
+  - All bulk controls disabled in offline mode
+  - Per-row Edit/Delete buttons and Delete-key single-record deletion remain fully functional
+
+### Technical Improvements in 0.11.0-beta
+
+- Added `COL_CHECK`, `COL_NAME`, `COL_TYPE`, `COL_TTL`, `COL_CONTENT`, `COL_ACTIONS` module-level constants replacing all hardcoded column indices in `record_widget.py`
+- New `_BulkDeleteWorker(QThread)` class with `progress_update`, `record_done`, and `finished` signals
+- New methods on `RecordWidget`: `_on_item_changed`, `_update_bulk_btn`, `_select_all_records`, `_select_none_records`, `_get_checked_records`, `delete_selected_records`, `_set_bulk_busy`, `_on_bulk_record_done`, `_on_bulk_delete_finished`
+- `blockSignals(True/False)` wraps checkbox population in `update_records_table()` to prevent spurious state updates
+
 ## [0.10.0-beta] - 2026-02-23
 
 ### Added in 0.10.0-beta

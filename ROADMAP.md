@@ -31,8 +31,8 @@ This document outlines planned features and improvements for future releases of 
   - [x] Application restart on profile switch for complete isolation
   - [x] Comprehensive documentation (doc/PROFILES.md)
 
-- [ ] **Batch Actions via Selectable List/Table**  
-  Enable multi-select with checkboxes for performing actions on multiple records or zones at once.
+- [x] **Batch Actions via Selectable List/Table** (in 0.11.0-beta)
+  Multi-select checkboxes on the DNS records table with Select All / Select None and bulk Delete Selected (N) action.
 
 - [x] **Import/Export Functionality** (Enhanced in v0.6.0-beta)
   Support for DNS zone import/export in various formats:

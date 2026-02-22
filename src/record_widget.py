@@ -9,11 +9,56 @@ Displays and manages DNS records for a selected zone.
 import logging
 import time
 from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import Qt, pyqtSignal, QThreadPool
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QThreadPool
 
 from workers import LoadRecordsWorker
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Column index constants
+# ---------------------------------------------------------------------------
+COL_CHECK   = 0
+COL_NAME    = 1
+COL_TYPE    = 2
+COL_TTL     = 3
+COL_CONTENT = 4
+COL_ACTIONS = 5
+
+
+# ---------------------------------------------------------------------------
+# Bulk-delete background worker
+# ---------------------------------------------------------------------------
+
+class _BulkDeleteWorker(QThread):
+    progress_update = pyqtSignal(int, str)   # pct, status message
+    record_done     = pyqtSignal(bool, str)  # success, label
+    finished        = pyqtSignal(int, int)   # deleted, failed
+
+    def __init__(self, api_client, domain, records):
+        super().__init__()
+        self.api_client = api_client
+        self.domain     = domain
+        self.records    = records
+
+    def run(self):
+        total   = len(self.records)
+        deleted = 0
+        failed  = 0
+        for idx, record in enumerate(self.records):
+            pct   = int((idx / total) * 100) if total else 100
+            sub   = record.get('subname', '') or ''
+            rtype = record.get('type', '')
+            label = f"{sub or '@'} {rtype}"
+            self.progress_update.emit(pct, f"Deleting {label}…")
+            ok, _ = self.api_client.delete_record(self.domain, sub, rtype)
+            if ok:
+                deleted += 1
+            else:
+                failed += 1
+            self.record_done.emit(ok, label)
+        self.progress_update.emit(100, "Done.")
+        self.finished.emit(deleted, failed)
 
 class RecordWidget(QtWidgets.QWidget):
     """Widget for displaying and managing DNS records."""
@@ -328,61 +373,68 @@ class RecordWidget(QtWidgets.QWidget):
         
         # Records table
         self.records_table = QtWidgets.QTableWidget()
-        self.records_table.setColumnCount(5)  # Name, Type, TTL, Content, Actions
-        
-        # Create header items with sort icons for sortable columns
+        self.records_table.setColumnCount(6)  # Check, Name, Type, TTL, Content, Actions
+
+        # Create header items
+        check_header = QtWidgets.QTableWidgetItem("")
+        check_header.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
         name_header = QtWidgets.QTableWidgetItem("Name ↕")
         name_header.setToolTip("Click to sort by name")
         name_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-        
+
         type_header = QtWidgets.QTableWidgetItem("Type ↕")
         type_header.setToolTip("Click to sort by record type")
         type_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-        
+
         ttl_header = QtWidgets.QTableWidgetItem("TTL ↕")
         ttl_header.setToolTip("Click to sort by TTL value")
         ttl_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-        
+
         content_header = QtWidgets.QTableWidgetItem("Content ↕")
         content_header.setToolTip("Click to sort by content")
         content_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-        
+
         actions_header = QtWidgets.QTableWidgetItem("Actions")
         actions_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-        
-        self.records_table.setHorizontalHeaderItem(0, name_header)
-        self.records_table.setHorizontalHeaderItem(1, type_header)
-        self.records_table.setHorizontalHeaderItem(2, ttl_header)
-        self.records_table.setHorizontalHeaderItem(3, content_header)
-        self.records_table.setHorizontalHeaderItem(4, actions_header)
+
+        self.records_table.setHorizontalHeaderItem(COL_CHECK,   check_header)
+        self.records_table.setHorizontalHeaderItem(COL_NAME,    name_header)
+        self.records_table.setHorizontalHeaderItem(COL_TYPE,    type_header)
+        self.records_table.setHorizontalHeaderItem(COL_TTL,     ttl_header)
+        self.records_table.setHorizontalHeaderItem(COL_CONTENT, content_header)
+        self.records_table.setHorizontalHeaderItem(COL_ACTIONS, actions_header)
         
         # Set table properties
         self.records_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.records_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.records_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.records_table.setAlternatingRowColors(True)
-        # Enable interactive column width adjustment by the user
-        self.records_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Interactive)  # Name column
-        self.records_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Interactive)  # Type column
-        self.records_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Interactive)  # TTL column
-        self.records_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)  # Content column stretches
-        self.records_table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.Interactive)  # Actions column
-        
-        # Set initial default widths for better appearance
-        self.records_table.setColumnWidth(0, 120)  # Name column
-        self.records_table.setColumnWidth(1, 100)  # Type column
-        self.records_table.setColumnWidth(2, 80)   # TTL column
-        self.records_table.setColumnWidth(4, 140)  # Actions column
+        # Column resize modes
+        self.records_table.horizontalHeader().setSectionResizeMode(COL_CHECK,   QtWidgets.QHeaderView.ResizeMode.Fixed)
+        self.records_table.horizontalHeader().setSectionResizeMode(COL_NAME,    QtWidgets.QHeaderView.ResizeMode.Interactive)
+        self.records_table.horizontalHeader().setSectionResizeMode(COL_TYPE,    QtWidgets.QHeaderView.ResizeMode.Interactive)
+        self.records_table.horizontalHeader().setSectionResizeMode(COL_TTL,     QtWidgets.QHeaderView.ResizeMode.Interactive)
+        self.records_table.horizontalHeader().setSectionResizeMode(COL_CONTENT, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.records_table.horizontalHeader().setSectionResizeMode(COL_ACTIONS, QtWidgets.QHeaderView.ResizeMode.Interactive)
+
+        # Set initial default widths
+        self.records_table.setColumnWidth(COL_CHECK,   28)
+        self.records_table.setColumnWidth(COL_NAME,    120)
+        self.records_table.setColumnWidth(COL_TYPE,    100)
+        self.records_table.setColumnWidth(COL_TTL,     80)
+        self.records_table.setColumnWidth(COL_ACTIONS, 140)
         self.records_table.verticalHeader().setVisible(False)
-        
+
         # Enhance sort indicator visibility
         self.records_table.horizontalHeader().setSortIndicatorShown(True)
         self.records_table.horizontalHeader().sortIndicatorChanged.connect(self.sort_records_table)
-        
-        # Set default sort by name (column 0) in ascending order
+
+        # Set default sort by name column in ascending order
         self.records_table.setSortingEnabled(True)
-        self.records_table.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
+        self.records_table.sortByColumn(COL_NAME, QtCore.Qt.SortOrder.AscendingOrder)
         self.records_table.cellDoubleClicked.connect(self.handle_cell_double_clicked)
+        self.records_table.itemChanged.connect(self._on_item_changed)
         
         # Set table style to match zone list
         self.records_table.setStyleSheet(
@@ -414,9 +466,27 @@ class RecordWidget(QtWidgets.QWidget):
             self.add_record_btn.setToolTip("Unavailable in offline mode")
         actions_layout.addWidget(self.add_record_btn)
         
-        # Add stretch to align buttons to the left
         actions_layout.addStretch()
-        
+
+        self.select_all_btn = QtWidgets.QPushButton("Select All")
+        self.select_all_btn.setFixedHeight(25)
+        self.select_all_btn.setEnabled(False)
+        self.select_all_btn.clicked.connect(self._select_all_records)
+        actions_layout.addWidget(self.select_all_btn)
+
+        self.select_none_btn = QtWidgets.QPushButton("Select None")
+        self.select_none_btn.setFixedHeight(25)
+        self.select_none_btn.setEnabled(False)
+        self.select_none_btn.clicked.connect(self._select_none_records)
+        actions_layout.addWidget(self.select_none_btn)
+
+        self.bulk_delete_btn = QtWidgets.QPushButton("Delete Selected")
+        self.bulk_delete_btn.setFixedHeight(25)
+        self.bulk_delete_btn.setEnabled(False)
+        self.bulk_delete_btn.setStyleSheet("QPushButton { color: #c62828; }")
+        self.bulk_delete_btn.clicked.connect(self.delete_selected_records)
+        actions_layout.addWidget(self.bulk_delete_btn)
+
         layout.addLayout(actions_layout)
     
     def set_domain(self, domain_name):
@@ -473,23 +543,26 @@ class RecordWidget(QtWidgets.QWidget):
             else:
                 self.add_record_btn.setToolTip("")
         
-        # Enable/disable edit button
+        # Enable/disable per-row edit and delete buttons
         for row in range(self.records_table.rowCount()):
-            edit_btn = self.records_table.cellWidget(row, 4).layout().itemAt(0).widget()
-            edit_btn.setEnabled(self.can_edit)
-            if not self.can_edit:
-                edit_btn.setToolTip("Editing records is disabled in offline mode")
-            else:
-                edit_btn.setToolTip("Edit the selected record")
-                
-        # Enable/disable delete button
-        for row in range(self.records_table.rowCount()):
-            delete_btn = self.records_table.cellWidget(row, 4).layout().itemAt(1).widget()
-            delete_btn.setEnabled(self.can_edit)
-            if not self.can_edit:
-                delete_btn.setToolTip("Deleting records is disabled in offline mode")
-            else:
-                delete_btn.setToolTip("Delete the selected record")
+            cell = self.records_table.cellWidget(row, COL_ACTIONS)
+            if not cell or not cell.layout():
+                continue
+            edit_btn = cell.layout().itemAt(0).widget()
+            if edit_btn:
+                edit_btn.setEnabled(self.can_edit)
+                edit_btn.setToolTip("" if self.can_edit else "Editing records is disabled in offline mode")
+            delete_btn = cell.layout().itemAt(1).widget()
+            if delete_btn:
+                delete_btn.setEnabled(self.can_edit)
+                delete_btn.setToolTip("" if self.can_edit else "Deleting records is disabled in offline mode")
+
+        # Enable/disable bulk action buttons
+        if hasattr(self, 'select_all_btn'):
+            has_rows = self.records_table.rowCount() > 0
+            self.select_all_btn.setEnabled(self.can_edit and has_rows)
+            self.select_none_btn.setEnabled(self.can_edit and has_rows)
+            self._update_bulk_btn()
     
     def refresh_records(self):
         """Refresh the records for the current domain."""
@@ -601,134 +674,106 @@ class RecordWidget(QtWidgets.QWidget):
         # Ensure edit controls reflect offline/online state after table update
         self.set_edit_enabled(self.is_online and not self.config_manager.get_offline_mode())
         
+        self.records_table.blockSignals(True)
         for row, record in enumerate(filtered_records):
             self.records_table.insertRow(row)
-            
+
+            # Checkbox column
+            chk = QtWidgets.QTableWidgetItem()
+            chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            chk.setCheckState(Qt.CheckState.Unchecked)
+            self.records_table.setItem(row, COL_CHECK, chk)
+
             # Name column (subname)
-            name = record.get('subname', '')
-            if not name:
-                name = '@'  # Represent apex with @
+            name = record.get('subname', '') or '@'
             name_item = QtWidgets.QTableWidgetItem(name)
             name_item.setData(Qt.ItemDataRole.UserRole, record)
-            
-            # Add timestamp tooltip (only timestamps, no other info)
             timestamp_tooltip = self._get_timestamp_tooltip(record)
             if timestamp_tooltip:
                 name_item.setToolTip(timestamp_tooltip)
-            
-            self.records_table.setItem(row, 0, name_item)
-            
+            self.records_table.setItem(row, COL_NAME, name_item)
+
             # Type column
             record_type = record.get('type', '')
             type_item = QtWidgets.QTableWidgetItem(record_type)
-            
-            # Apply color coding to differentiate record types
             if record_type == 'A':
-                type_item.setForeground(QtGui.QColor('#2196F3'))  # Blue
+                type_item.setForeground(QtGui.QColor('#2196F3'))
             elif record_type == 'AAAA':
-                type_item.setForeground(QtGui.QColor('#3F51B5'))  # Indigo
+                type_item.setForeground(QtGui.QColor('#3F51B5'))
             elif record_type in ['CNAME', 'DNAME']:
-                type_item.setForeground(QtGui.QColor('#4CAF50'))  # Green
+                type_item.setForeground(QtGui.QColor('#4CAF50'))
             elif record_type == 'MX':
-                type_item.setForeground(QtGui.QColor('#FF9800'))  # Orange
+                type_item.setForeground(QtGui.QColor('#FF9800'))
             elif record_type in ['TXT', 'SPF']:
-                type_item.setForeground(QtGui.QColor('#673AB7'))  # Deep Purple
+                type_item.setForeground(QtGui.QColor('#673AB7'))
             elif record_type in ['NS', 'DS', 'DNSKEY']:
-                type_item.setForeground(QtGui.QColor('#E91E63'))  # Pink
-                
-            # Add timestamp tooltip (only timestamps, no guidance)
-            timestamp_tooltip = self._get_timestamp_tooltip(record)
+                type_item.setForeground(QtGui.QColor('#E91E63'))
             if timestamp_tooltip:
                 type_item.setToolTip(timestamp_tooltip)
-                
-            self.records_table.setItem(row, 1, type_item)
-            
-            # TTL column - store as number for proper numeric sorting
+            self.records_table.setItem(row, COL_TYPE, type_item)
+
+            # TTL column — store as number for proper numeric sorting
             ttl_item = QtWidgets.QTableWidgetItem()
             ttl_item.setData(Qt.ItemDataRole.DisplayRole, int(record.get('ttl', 0)))
-            
-            # Add timestamp tooltip (only timestamps, no other info)
-            timestamp_tooltip = self._get_timestamp_tooltip(record)
             if timestamp_tooltip:
                 ttl_item.setToolTip(timestamp_tooltip)
-            
-            self.records_table.setItem(row, 2, ttl_item)
-            
-            # Content column (join multiple records with newlines)
-            records_list = record.get('records', [])
-            
-            # Always show all records in the content, but control row height separately
-            content_text = "\n".join(records_list)
-                    
+            self.records_table.setItem(row, COL_TTL, ttl_item)
+
+            # Content column
+            content_text = "\n".join(record.get('records', []))
             content_item = QtWidgets.QTableWidgetItem(content_text)
-            
-            # Add timestamp tooltip (only timestamps, no content)
-            timestamp_tooltip = self._get_timestamp_tooltip(record)
             if timestamp_tooltip:
                 content_item.setToolTip(timestamp_tooltip)
-            
-            self.records_table.setItem(row, 3, content_item)
-            
+            self.records_table.setItem(row, COL_CONTENT, content_item)
+
             # Actions column
             actions_widget = QtWidgets.QWidget()
             actions_layout = QtWidgets.QHBoxLayout(actions_widget)
             actions_layout.setContentsMargins(4, 0, 4, 0)
             actions_layout.setSpacing(4)
-            
-            # Edit button
+
+            record_ref = record
             edit_btn = QtWidgets.QPushButton("Edit")
             edit_btn.setFixedSize(60, 25)
-            # Store the record directly instead of row index to avoid sorting/filtering issues
-            record_ref = record  # Make sure we reference this specific record
             edit_btn.clicked.connect(lambda _, rec=record_ref: self.edit_record_by_ref(rec))
-            # Store the record as a property on the button for Delete key handling
             edit_btn.setProperty('record_ref', record_ref)
             edit_btn.setEnabled(self.can_edit)
-            if not self.can_edit:
-                edit_btn.setToolTip("Editing records is disabled in offline mode")
-            else:
-                edit_btn.setToolTip("Edit the selected record")
-            
-            # Delete button
+            edit_btn.setToolTip("" if self.can_edit else "Editing records is disabled in offline mode")
+
             delete_btn = QtWidgets.QPushButton("Delete")
             delete_btn.setFixedSize(60, 25)
-            # Store the record directly instead of row index to avoid sorting/filtering issues
-            record_ref = record  # Make sure we reference this specific record
             delete_btn.clicked.connect(lambda _, rec=record_ref: self.delete_record_by_ref(rec))
-            # Store the record as a property on the button for Delete key handling
             delete_btn.setProperty('record_ref', record_ref)
             delete_btn.setEnabled(self.can_edit)
-            if not self.can_edit:
-                delete_btn.setToolTip("Deleting records is disabled in offline mode")
-            else:
-                delete_btn.setToolTip("Delete the selected record")
-            
+            delete_btn.setToolTip("" if self.can_edit else "Deleting records is disabled in offline mode")
+
             actions_layout.addWidget(edit_btn)
             actions_layout.addWidget(delete_btn)
             actions_layout.addStretch()
-            
-            self.records_table.setCellWidget(row, 4, actions_widget)
-        
-        # Only set column stretch mode for content column
-        # Don't resize other columns to preserve user column width preferences
-        self.records_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)  # Content column
-        
+
+            self.records_table.setCellWidget(row, COL_ACTIONS, actions_widget)
+
+        self.records_table.blockSignals(False)
+        self._update_bulk_btn()
+
+        # Preserve content column stretch
+        self.records_table.horizontalHeader().setSectionResizeMode(
+            COL_CONTENT, QtWidgets.QHeaderView.ResizeMode.Stretch
+        )
+
         # Adjust row heights based on multiline display setting
         if self.show_multiline:
-            # Allow rows to expand to fit content
             self.records_table.resizeRowsToContents()
         else:
-            # Use fixed height rows in condensed mode
             default_height = self.records_table.verticalHeader().defaultSectionSize()
             for row in range(self.records_table.rowCount()):
                 self.records_table.setRowHeight(row, default_height)
-    
+
         # Re-enable sorting if it was enabled before
         self.records_table.setSortingEnabled(was_sorting_enabled)
-        
-        # Ensure the default sort is by Name column (if sorting was enabled)
+
         if was_sorting_enabled:
-            self.records_table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+            self.records_table.sortByColumn(COL_NAME, Qt.SortOrder.AscendingOrder)
     
     def filter_records(self, filter_text):
         """
@@ -799,32 +844,37 @@ class RecordWidget(QtWidgets.QWidget):
             column: The column index to sort by
             order: The sort order (ascending or descending)
         """
-        # Only enable sorting on Name (0), Type (1), TTL (2), and Content (3) columns
-        if column <= 3:
+        # Only enable sorting on Name, Type, TTL, and Content columns
+        if column in (COL_NAME, COL_TYPE, COL_TTL, COL_CONTENT):
             self.records_table.sortItems(column, Qt.SortOrder(order))
-            
+
             # Update header text to indicate current sort column and direction
-            header_items = ["Name", "Type", "TTL", "Content", "Actions"]
-            for i in range(len(header_items)):
-                item = self.records_table.horizontalHeaderItem(i)
-                if i == column:
-                    # Add sort direction indicator
+            header_items = {
+                COL_NAME:    "Name",
+                COL_TYPE:    "Type",
+                COL_TTL:     "TTL",
+                COL_CONTENT: "Content",
+                COL_ACTIONS: "Actions",
+            }
+            for col, label in header_items.items():
+                item = self.records_table.horizontalHeaderItem(col)
+                if item is None:
+                    continue
+                if col == column:
                     arrow = "↑" if order == Qt.SortOrder.AscendingOrder else "↓"
-                    item.setText(f"{header_items[i]} {arrow}")
-                elif i < 4:  # Only add sort indicator to sortable columns
-                    # Reset other sortable headers
-                    item.setText(f"{header_items[i]} ↕")
+                    item.setText(f"{label} {arrow}")
+                elif col != COL_ACTIONS:
+                    item.setText(f"{label} ↕")
                 else:
-                    # Actions column has no sort indicator
-                    item.setText(header_items[i])
+                    item.setText(label)
     
     def handle_cell_double_clicked(self, row, column):
         """Handle double-click on a cell."""
         if not self.can_edit:
             return
-        # Ignore double-click on the Actions column
-        if column != 4:  # 4 is the Actions column
-            record_item = self.records_table.item(row, 0)
+        # Ignore double-click on the checkbox and Actions columns
+        if column not in (COL_CHECK, COL_ACTIONS):
+            record_item = self.records_table.item(row, COL_NAME)
             record = record_item.data(Qt.ItemDataRole.UserRole)
             if record:
                 self.edit_record_by_ref(record)
@@ -855,19 +905,19 @@ class RecordWidget(QtWidgets.QWidget):
         if not self.can_edit:
             return
             
-        record_item = self.records_table.item(row, 0)
+        record_item = self.records_table.item(row, COL_NAME)
         record = record_item.data(Qt.ItemDataRole.UserRole)
-        
+
         if not record:
             return
-            
+
         dialog = RecordDialog(self.current_domain, self.api_client, record=record, parent=self)
         dialog.setWindowTitle("Edit DNS Record")
-        
+
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self.records_changed.emit()
             self.refresh_records()
-    
+
     def delete_selected_record(self):
         """Delete the currently selected record in the table.
         Called when pressing the Delete key while the records table has focus.
@@ -887,8 +937,7 @@ class RecordWidget(QtWidgets.QWidget):
         
         # Get the record reference from the delete button in the actions column
         try:
-            # Get reference to the actions column containing edit/delete buttons
-            actions_cell = self.records_table.cellWidget(row, 4)  # Column 4 is actions
+            actions_cell = self.records_table.cellWidget(row, COL_ACTIONS)
             if not actions_cell or not actions_cell.layout():
                 self.log_message.emit("Could not access actions cell for deletion", "warning")
                 return
@@ -917,6 +966,94 @@ class RecordWidget(QtWidgets.QWidget):
         except Exception as e:
             self.log_message.emit(f"Error accessing record for deletion: {str(e)}", "error")
     
+    # ------------------------------------------------------------------
+    # Bulk selection and delete
+    # ------------------------------------------------------------------
+
+    def _on_item_changed(self, item):
+        if item.column() == COL_CHECK:
+            self._update_bulk_btn()
+
+    def _update_bulk_btn(self):
+        if not hasattr(self, 'bulk_delete_btn'):
+            return
+        n = len(self._get_checked_records())
+        can = n > 0 and self.can_edit
+        self.bulk_delete_btn.setEnabled(can)
+        self.bulk_delete_btn.setText(f"Delete Selected ({n})" if n > 0 else "Delete Selected")
+        has_rows = self.records_table.rowCount() > 0
+        self.select_all_btn.setEnabled(has_rows and self.can_edit)
+        self.select_none_btn.setEnabled(has_rows and self.can_edit)
+
+    def _select_all_records(self):
+        self.records_table.blockSignals(True)
+        for row in range(self.records_table.rowCount()):
+            item = self.records_table.item(row, COL_CHECK)
+            if item:
+                item.setCheckState(Qt.CheckState.Checked)
+        self.records_table.blockSignals(False)
+        self._update_bulk_btn()
+
+    def _select_none_records(self):
+        self.records_table.blockSignals(True)
+        for row in range(self.records_table.rowCount()):
+            item = self.records_table.item(row, COL_CHECK)
+            if item:
+                item.setCheckState(Qt.CheckState.Unchecked)
+        self.records_table.blockSignals(False)
+        self._update_bulk_btn()
+
+    def _get_checked_records(self):
+        result = []
+        for row in range(self.records_table.rowCount()):
+            chk = self.records_table.item(row, COL_CHECK)
+            if chk and chk.checkState() == Qt.CheckState.Checked:
+                name_item = self.records_table.item(row, COL_NAME)
+                if name_item:
+                    record = name_item.data(Qt.ItemDataRole.UserRole)
+                    if record:
+                        result.append(record)
+        return result
+
+    def delete_selected_records(self):
+        records = self._get_checked_records()
+        if not records or not self.can_edit:
+            return
+        confirm = QtWidgets.QMessageBox.question(
+            self, "Confirm Bulk Delete",
+            f"Permanently delete {len(records)} selected record(s)?\n\nThis cannot be undone.",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self._set_bulk_busy(True)
+        self._bulk_worker = _BulkDeleteWorker(self.api_client, self.current_domain, records)
+        self._bulk_worker.record_done.connect(self._on_bulk_record_done)
+        self._bulk_worker.finished.connect(self._on_bulk_delete_finished)
+        self._bulk_worker.start()
+
+    def _set_bulk_busy(self, busy):
+        self.bulk_delete_btn.setEnabled(not busy)
+        self.select_all_btn.setEnabled(not busy)
+        self.select_none_btn.setEnabled(not busy)
+        self.add_record_btn.setEnabled(not busy)
+
+    def _on_bulk_record_done(self, success, label):
+        self.log_message.emit(
+            f"{'Deleted' if success else 'Failed to delete'}: {label}",
+            "success" if success else "error",
+        )
+
+    def _on_bulk_delete_finished(self, deleted, failed):
+        self.cache_manager.clear_domain_cache(self.current_domain)
+        self.records_changed.emit()
+        self.refresh_records()
+        self._set_bulk_busy(False)
+        self.log_message.emit(
+            f"Bulk delete: {deleted} deleted, {failed} failed.", "info"
+        )
+
     def delete_record_by_ref(self, record):
         """Delete a record by reference instead of by row index.
         
