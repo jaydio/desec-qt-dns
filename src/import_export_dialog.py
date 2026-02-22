@@ -67,6 +67,7 @@ class ImportExportDialog(QtWidgets.QDialog):
         """Set up the user interface."""
         self.setWindowTitle("Import/Export DNS Zones")
         self.setMinimumSize(600, 500)
+        self.resize(600, 740)
         self.setModal(True)
         
         layout = QtWidgets.QVBoxLayout(self)
