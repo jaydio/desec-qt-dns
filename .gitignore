@@ -102,4 +102,4 @@ build/
 
 # === Windsurf ===
 .windsurf/
-
+.claude/
