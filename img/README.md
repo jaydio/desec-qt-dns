@@ -6,7 +6,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ### Main Interface
 
-![Main Window](main_window.png)
+<img src="main_window.png" width="75%">
 
 **`main_window.png`**
 - Primary application interface showing the two-pane layout
@@ -17,7 +17,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ### Configuration
 
-![Settings Window](settings_window.png)
+<img src="settings_window.png" width="50%">
 
 **`settings_window.png`**
 - Configuration dialog showing Theme Settings (Light / Dark / System Default) and per-mode theme selection
@@ -26,7 +26,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ### Global Search & Replace
 
-![Search & Replace — Results](search_replace_search.png)
+<img src="search_replace_search.png" width="60%">
 
 **`search_replace_search.png`**
 - Global Search & Replace dialog after running a search across all zones
@@ -34,7 +34,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 - Results table with per-row checkboxes, Select All / Select None, and Export Results
 - Replace section showing content find → replace and subname/TTL change fields
 
-![Search & Replace — Applied](search_replace_applied.png)
+<img src="search_replace_applied.png" width="60%">
 
 **`search_replace_applied.png`**
 - Same dialog after applying a content replacement
@@ -43,7 +43,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ### Token Management
 
-![Token Manager](token_manager.png)
+<img src="token_manager.png" width="75%">
 
 **`token_manager.png`**
 - API Token Manager with a list of tokens (name, created, last used, valid status, permissions)
@@ -51,7 +51,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 - RRset Policies tab for fine-grained access control
 - New Token / Delete / Refresh / Save Changes controls
 
-![Create New Token](token_create.png)
+<img src="token_create.png" width="40%">
 
 **`token_create.png`**
 - Create New Token dialog with Token Settings group
@@ -59,20 +59,20 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 - Expiration section: Max Age and Max Unused Period
 - Allowed Subnets text area (pre-filled with 0.0.0.0/0 and ::/0)
 
-![Add Policy](token_policy_add.png)
+<img src="token_policy_add.png" width="35%">
 
 **`token_policy_add.png`**
 - Add Policy dialog for defining fine-grained RRset access rules
 - Fields: Domain, Subname, Type (dropdown), and Write permission toggle
 
-![Edit Policy](token_policy_edit.png)
+<img src="token_policy_edit.png" width="35%">
 
 **`token_policy_edit.png`**
 - Edit Policy dialog with the same fields, pre-filled with existing policy values
 
 ### Import/Export
 
-![Export Window](export_window.png)
+<img src="export_window.png" width="45%">
 
 **`export_window.png`**
 - Import/Export dialog — Export tab
@@ -80,7 +80,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 - Output file field with Browse and Auto-Generate buttons, Export Zone action button
 - Enable Bulk Export checkbox for multi-zone ZIP export mode
 
-![Import Window](import_window.png)
+<img src="import_window.png" width="45%">
 
 **`import_window.png`**
 - Import/Export dialog — Import tab
@@ -90,16 +90,15 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ### Multi-Profile Support
 
-![Profile Management](profile_management.png)
+<img src="profile_management.png" width="50%">
 
 **`profile_management.png`**
 - Profile Management dialog listing available profiles with current profile highlighted
 - Profile Information panel: name, display name, created date, last used date
 - Controls: Switch To, Create New, Rename, Delete, Refresh
 
-![Create New Profile](profile_create.png)
+<img src="profile_create.png" width="35%">
 
 **`profile_create.png`**
 - Create New Profile dialog with Profile Name and Display Name fields
 - Help text explaining naming constraints
-
