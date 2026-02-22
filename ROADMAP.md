@@ -19,8 +19,8 @@ This document outlines planned features and improvements for future releases of 
   - [x] View token usage statistics (last used, created date)
   - [ ] Bulk operations for token management (future)
 
-- [ ] **Global Search and Replace**  
-  Quickly search across all or selected zones and records, with optional batch replace functionality for efficient bulk edits.
+- [x] **Global Search and Replace** (in 0.10.0-beta)
+  Search across all zones and records with optional batch replace for efficient bulk edits.
 
 - [x] **Multi-Profile Support** (in 0.5.0-beta)
   Isolated tokens, cache, and settings per profile for managing multiple identities or environments.

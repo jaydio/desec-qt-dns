@@ -226,7 +226,13 @@ class MainWindow(QtWidgets.QMainWindow):
         import_export_action.setStatusTip("Import or export DNS zones and records")
         import_export_action.triggered.connect(self.show_import_export_dialog)
         file_menu.addAction(import_export_action)
-        
+
+        # Global Search & Replace
+        search_replace_action = QtGui.QAction("&Global Search && Replace...", self)
+        search_replace_action.setStatusTip("Search and replace across all DNS zones")
+        search_replace_action.triggered.connect(self.show_search_replace_dialog)
+        file_menu.addAction(search_replace_action)
+
         # Add separator
         file_menu.addSeparator()
         
@@ -742,6 +748,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # Restart the application to load the new profile
         self.restart_application()
     
+    def show_search_replace_dialog(self):
+        """Show the global search & replace dialog."""
+        from search_replace_dialog import SearchReplaceDialog
+        dialog = SearchReplaceDialog(self.api_client, self.cache_manager, self)
+        dialog.exec()
+
     def show_import_export_dialog(self):
         """Show the import/export dialog."""
         # Get list of available zones for export
@@ -874,7 +886,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "<h2 align=\"center\">deSEC Qt DNS Manager</h2>"
             "<p align=\"center\">A desktop application for managing DNS zones and records<br/>"
             "using the deSEC API.</p>"
-            "<p align=\"center\"><b>Version 0.9.0-beta</b></p>"
+            "<p align=\"center\"><b>Version 0.10.0-beta</b></p>"
             "<hr/>"
             "<p align=\"center\">🚀 Developed by <b>JD Bungart</b></p>"
             "<p align=\"center\">✉️ <a href=\"mailto:me@jdneer.com\">me@jdneer.com</a></p>"

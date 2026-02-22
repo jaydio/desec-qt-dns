@@ -5,6 +5,31 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0-beta] - 2026-02-23
+
+### Added in 0.10.0-beta
+
+- **Global Search & Replace** — search across all DNS zones simultaneously and apply bulk changes
+  - Filter by any combination of subname (contains), record type, content (contains), and TTL (exact)
+  - Results table with per-row checkboxes — select exactly which records to update
+  - Select All / Select None buttons for quick selection management
+  - Content find & replace: string substitution within record values (e.g. replace an old IP)
+  - Subname rename: transparently creates new rrset and deletes the old one
+  - TTL bulk update: set a new TTL across all matched records in one operation
+  - Content and TTL changes can be combined in a single pass
+  - Row-level feedback: rows turn green on success, red on failure with error tooltip
+  - Progress bar with per-zone status during both search and replace phases
+  - Offline-safe: search works against cache when offline; Apply button disabled when offline
+  - Confirmation dialog before any destructive replace operation
+  - File → Global Search & Replace... in the menu
+
+### Technical Improvements in 0.10.0-beta
+
+- New `src/search_replace_dialog.py` with `SearchReplaceDialog`, `_SearchWorker(QThread)`, `_ReplaceWorker(QThread)`
+- Search loads records from cache first, falls back to API per zone — no blocking the UI
+- Replace worker invalidates per-domain cache after each zone's records are updated
+- Subname rename uses create-then-delete pattern against the rrset API endpoints
+
 ## [0.9.0-beta] - 2026-02-23
 
 ### Added in 0.9.0-beta
