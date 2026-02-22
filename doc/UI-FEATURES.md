@@ -1,138 +1,235 @@
-# deSEC Qt DNS Manager: UI Features Guide
+# deSEC Qt DNS Manager — UI Features Guide
 
-This document provides information about the user interface features in the deSEC Qt DNS Manager application.
+## Main Interface
 
-## Main Interface Components
+The application uses a two-pane layout:
 
-The application interface consists of several key components:
+| Area | Purpose |
+|------|---------|
+| Left pane | DNS zone list with search, account limit display, and zone controls |
+| Right pane | DNS records table for the selected zone |
+| Bottom | Collapsible log console |
+| Status bar | Last sync time and ONLINE / OFFLINE indicator |
 
-1. **Main Window**: Contains the menu bar, zone list, and record management panel
-2. **Zone List Panel**: Displays available DNS zones with filtering capabilities
-3. **Record Management Panel**: Shows and manages records for the selected zone
-4. **Log Panel**: Displays notification messages and operation results
+### Menu Bar
 
-## Zone Management Features
+| Menu | Items |
+|------|-------|
+| **File** | Settings, Clear Cache, —, Import/Export, Global Search & Replace, —, Manage Tokens, —, Quit |
+| **Profile** | Current profile name, Manage Profiles… |
+| **Connection** | Sync Now, Check Connectivity, Offline Mode toggle |
+| **View** | Show Log Console, Show Multiline Records |
+| **Help** | About |
 
-### Zone List Display
+---
 
-- All zones are listed in alphabetical order for easy navigation
-- Zone selection updates the record panel automatically
-- Background loading ensures UI remains responsive during zone retrieval
+## Zone Management
 
-### Zone Filtering
+### Zone List
 
-To filter zones:
-1. Enter search text in the search field above the zone list
-2. The list filters in real-time to show only matching zone names
-3. Clear the search field to show all zones again
+- Lists all zones sorted alphabetically
+- Header shows **"Total zones: N/limit"** where the limit is fetched live from `GET /auth/account/` — updates to `"Total zones: N"` gracefully when offline
+- Real-time search filter (updates as you type); filtered display shows `"Showing M of N/limit zones"`
+- Selecting a zone immediately loads its records in the right pane
 
-## Record Management Features
+### Zone Controls
 
-### Record Display
+- **Add Zone** — prompts for domain name, creates via API
+- **Delete Zone** — confirmation required; removes zone and all its records
+- **Validate DNSSEC** — checks DNSSEC chain of trust for the selected zone
 
-The record management panel shows all records for the selected zone with the following information:
-- Record name (subdomain)
-- Record type (A, AAAA, MX, etc.)
-- TTL value
-- Record content
+---
 
-By default, records with multiple lines of content display only the first 3 lines followed by a count of remaining entries. To view all content lines, use the "Show Multiline Records" option in the View menu.
+## Record Management
 
-### Record Sorting
+### Records Table
 
-The records table supports advanced sorting options:
+Columns: ☐ | Name ↑ | Type ↕ | TTL ↕ | Content ↕ | Actions
 
-- **Default Sorting**: Records are sorted by name in ascending order by default
-- **Column Sorting**: Click any column header to sort by that column
-  - Name: Sort alphabetically by subdomain
-  - Type: Sort alphabetically by record type
-  - TTL: Sort numerically by TTL value
-  - Content: Sort alphabetically by record content
-- **Sort Direction**: 
-  - First click: Sort ascending (↑)
-  - Second click: Sort descending (↓)
-  - Third click: Return to default sorting
-- **Sort Indicators**: Arrows in column headers show current sort direction
+- **Checkbox column** — native centred checkbox per row for batch selection; selected rows are highlighted with a palette-blended tint
+- **Sort** by any column (click header); third click returns to default name-ascending order
+- **Search / filter** across all fields (name, type, TTL, content) in real time
+- **Double-click** a row to open the Edit Record dialog
+- **Delete key** on a selected row triggers single-record deletion with confirmation
 
-### Record Filtering
+### Adding and Editing Records
 
-To filter records within a zone:
-1. Enter search text in the search field above the record list
-2. The list will filter in real-time to show only matching records
-3. Filtering works across all fields (name, type, TTL, and content)
+1. Click **Add Record** or double-click / click **Edit** on an existing row
+2. The Record dialog opens (minimum 560 × 640 px):
+   - Record type selector (37 types; CDS excluded — API-managed)
+   - Subname, TTL (preset options from 60 s to 86400 s), content area
+   - Format hint, example, and tooltip for each record type
+   - Real-time validation with colour-coded feedback
+   - DNSSEC types (DNSKEY, DS, CDNSKEY) show a prominent warning
 
-## Performance Optimizations
+### Batch Actions
 
-The application includes several performance optimizations for a smooth user experience:
+- **Select All** — checks every visible row
+- **Select None** — unchecks all rows
+- **Delete Selected (N)** — red button; shows count of checked rows, asks for confirmation, then runs `_BulkDeleteWorker` in background
+- All batch controls disabled in offline mode or when no rows are loaded
 
-- **Asynchronous Loading**: Zone and record data loads in background threads to keep the UI responsive
-- **Multi-layered Caching**: Data is cached in memory and on disk for fast access
-- **O(1) Indexing**: Zone and record lookups use optimized indexing for instant access
-- **Immediate UI Updates**: The UI updates immediately after operations, then syncs with the API
+---
 
-## Notifications and Logging
+## Global Search & Replace
 
-The application provides several types of notifications:
+Accessible via **File → Global Search & Replace**.
 
-- **Success Messages**: Displayed in green when operations complete successfully
-- **Information Messages**: Displayed in blue for general information
-- **Warning Messages**: Displayed in orange for potential issues
-- **Error Messages**: Displayed in red when operations fail
+### Search
 
-All notifications are also written to the log file for reference.
+| Field | Behaviour |
+|-------|-----------|
+| Subname contains | Case-insensitive substring (or regex) |
+| Content contains | Case-insensitive substring (or regex) |
+| Zone contains | Substring match against zone name (or regex) |
+| Type | Exact match from dropdown |
+| TTL equals | Exact integer match |
+| Use regex | Toggles regex mode for subname, content, zone fields; **(?)** icon opens help popover |
 
-### Keyboard Shortcuts
+Click **Search All Zones** — searches across every cached zone.
 
-The following keyboard shortcuts are available for record management:
+### Results Table
 
-- ```F5``` Refresh all data from the API
-- ```Delete``` Delete the currently selected record (with confirmation)
-- ```Ctrl+F``` Switch to zone search field
-- ```Escape``` Clear the current search filter
-- ```Ctrl+Enter``` Close the currently open record dialog
-- ```Ctrl+Q``` Close the application
+- Shows Zone, Subname, Type, TTL, Content for each match
+- Per-row checkboxes; **Select All** / **Select None**; match count shown in green
+- **Export Results** — saves the table to a file
 
-These shortcuts significantly improve workflow efficiency, especially when managing multiple records across different zones.
+### Replace / Delete (applies to checked rows)
+
+| Field | Effect |
+|-------|--------|
+| Content → | Find & replace within record content values |
+| Subname | Rename subdomain (creates new RRset, deletes old) |
+| TTL | Change TTL value |
+| **Apply to Selected** | Applies all non-empty replacement fields |
+| **Delete Selected** | Permanently removes checked RRsets |
+
+### Change Log
+
+Shown after each apply operation. Lists old → new values for every modified record. **Clear Log** resets it.
+
+---
+
+## Token Management
+
+Accessible via **File → Manage Tokens** (requires `perm_manage_tokens` on the active token; the menu item is disabled otherwise — checked in background after every sync).
+
+### Token List
+
+Columns: Name | Created | Last Used | Valid | Perms
+
+- Select a token to view/edit its details in the right panel
+- **New Token** — opens Create New Token dialog
+- **Delete** — removes the selected token (with confirmation)
+- **Refresh** — reloads token list from API
+
+### Token Details (right panel)
+
+**Details tab**
+- Read-only: ID (with Copy button), owner, created, last used, validity, MFA type
+- Editable: name, permission flags (perm_create_domain, perm_delete_domain, perm_manage_tokens, auto_policy), max age, max unused period, allowed subnets
+
+**RRset Policies tab**
+- Lists fine-grained access rules: domain, subname, type, write flag
+- **Add Policy** / **Edit Policy** / **Delete Policy** buttons
+
+### Create New Token
+
+- Name field
+- Permission checkboxes with descriptions
+- Expiration: Max Age and Max Unused Period (format: `DD HH:MM:SS`, blank = no limit)
+- Allowed Subnets: one CIDR per line (default: `0.0.0.0/0` and `::/0`)
+- Token secret shown once after creation — must be copied before closing
+
+---
+
+## Import/Export
+
+Accessible via **File → Import/Export**. Opens at 600 × 740 px.
+
+### Export Tab
+
+- **Zone to Export** — dropdown of all available zones
+- **Enable Bulk Export** — switches to multi-zone mode with checkbox list + ZIP output
+- **Format** — JSON, YAML, BIND Zone File, djbdns/tinydns
+- **Include metadata** — preserves timestamps and API fields
+- **Output File** — Browse or Auto-Generate (timestamped filename)
+- **Export Zone** / **Export Selected Zones (ZIP)**
+
+### Import Tab
+
+- **Import File** — Browse to select file
+- **Import Format** — auto-detected or manually selected
+- **Target Zone** — use name from file, select existing, or enter new (auto-created)
+- **Existing Records Handling**: Append | Merge | Replace
+- **Preview Import** — validates file and shows record count + samples
+- **Import Zone** — runs import with progress bar; shows success/failure counts
+
+---
+
+## Configuration
+
+Accessible via **File → Settings**. Controls:
+
+| Setting | Description |
+|---------|-------------|
+| Theme Mode | Light / Dark / System Default |
+| Light Theme | Per-theme selector (Light+, Quiet Light, …) |
+| Dark Theme | Per-theme selector (Dark+, GitHub Dark, …) |
+| API URL | deSEC API endpoint |
+| API Token | Masked; show/hide toggle |
+| Sync Interval | 1–60 minutes (default 10) |
+| API Rate Limit | 0–10 req/sec (default 2.0) |
+| Enable debug mode | Verbose logging to console |
+
+---
+
+## Multi-Profile Support
+
+Accessible via **Profile → Manage Profiles…**. See [PROFILES.md](./PROFILES.md) for full documentation.
+
+Each profile has isolated: API token, cache, configuration, and UI state. Switching profiles restarts the application for complete isolation.
+
+---
+
+## Log Console
+
+- Toggleable via **View → Show Log Console**
+- Colour-coded messages: **green** (success), **orange** (warning), **red** (error), **default text** (info)
+- Timestamps in muted colour; 500-line rolling limit
+- Message count displayed next to "Log Console" heading
+- **Clear** button resets the log
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `F5` | Sync now (refresh all data) |
+| `Delete` | Delete selected record (with confirmation) |
+| `Ctrl+F` | Focus zone search field |
+| `Escape` | Clear current search filter |
+| `Ctrl+Q` | Quit application |
+
+---
 
 ## Offline Mode
 
-When operating offline:
+When offline (or via **Connection → Offline Mode**):
 
-- The application will use cached data for both zones and records
-- Modification operations are disabled until online connectivity is restored
-- The local file system cache doesn't expire or clear automatically
-- A notification appears to indicate offline mode is active
+- Zone and record data served from cache
+- All write operations (add, edit, delete, import, search & replace, bulk delete) are disabled
+- Status bar shows **OFFLINE** in orange/red
+- Batch controls (Select All, Select None, Delete Selected) also disabled
+- Zone count shown without limit suffix until connectivity is restored
 
-## View Menu Options
+---
 
-The View menu provides several display options:
+## Performance Features
 
-### Log Console
-
-- Toggle visibility of the log console at the bottom of the main window
-- The setting is remembered across application restarts
-
-### Show Multiline Records
-
-- When enabled, shows all lines for records with multiple entries
-- When disabled (default), shows only the first 3 lines followed by a count of additional entries
-- Setting is remembered across application restarts
-- Useful for complex TXT records, multiple MX entries, or any record type with multiple values
-
-## Advanced Features
-
-### Sorting Persistence
-
-- Sort preferences are maintained during your session
-- If you select a sort order for a zone's records, that sort order will be preserved if you:
-  - Switch to another zone and return
-  - Add, edit, or delete records
-  - Refresh the record list
-
-### Automatic Refresh
-
-The record list will automatically refresh when:
-- A new zone is selected
-- A record is added, edited, or deleted
-- The refresh button is clicked
-- The configured sync interval has passed and cache is stale
+- Background `QRunnable` workers for all API I/O — UI never blocks
+- `QAbstractListModel` + virtual scrolling for the zone list
+- Three-layer cache (memory → pickle → JSON) with O(1) indexed lookups
+- Incremental search filtering without full list rebuild
+- Configurable API rate limiter prevents 429 errors during bulk operations

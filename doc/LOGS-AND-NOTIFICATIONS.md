@@ -1,148 +1,144 @@
-# deSEC Qt DNS Manager - Logging and Notifications
-
-This document describes the logging and notification system implemented in the deSEC Qt DNS Manager application, including examples of different log message types and their formats.
+# deSEC Qt DNS Manager — Logging and Notifications
 
 ## Overview
 
-The application uses a multi-layered logging system that combines:
+The application uses a two-layer logging system:
 
-1. Console logging (via Python's `logging` module)
-2. UI-based log display (via the Log Console widget)
-3. Visual notifications for important events
+1. **Python `logging` module** — writes structured records to `~/.config/desecqt/logs/` and the console (debug mode)
+2. **Log Console widget** — in-window panel at the bottom of the main window with colour-coded, timestamped entries
 
-Logs are categorized by severity (info, success, warning, error) and include timestamps for easy tracking of application events.
+---
 
-## Log Message Formatting
+## Log Console
 
-### General Structure
+The log console is toggled via **View → Show Log Console**.
 
-Log messages follow a consistent format:
+### Severity Colours
 
-```
-[TIMESTAMP] - MODULE - LEVEL: MESSAGE
-```
+| Level | Colour | When used |
+|-------|--------|-----------|
+| `success` | Green (`#4caf50`) | Operation completed successfully |
+| `warning` | Orange (`#ffa726`) | Non-fatal issue or advisory |
+| `error` | Red (`#ef5350`) | Operation failed |
+| `info` | Palette text (adapts to theme) | General status messages |
 
-Example:
-```
-2025-06-07 03:20:49,343 - config_manager - INFO - Configuration loaded successfully
-```
+Timestamps are shown in a muted palette colour so they don't compete with the message text.
 
-### Contextual Information
+### Limits
 
-Record operation logs include rich contextual information:
+- Rolling 500-line limit (oldest entries discarded automatically)
+- **Clear** button resets the log; entry count shown in the header
 
-- Record type (A, AAAA, MX, TXT, etc.)
-- Domain and subdomain information
-- Full record content
-- For updates: both old and new values
+---
 
-## Log Message Types
+## Log Message Examples
 
 ### Record Operations
 
-#### Record Creation
-
-When a new DNS record is created:
-
 ```
 Successfully created A record for 'www' in domain 'example.com' with content: 192.0.2.1
-```
-
-#### Record Update
-
-When an existing DNS record is modified:
-
-```
-Successfully updated MX record for 'mail' in domain 'example.com' - changed content from '10 mail.example.com.' to '20 backup-mail.example.com.'
-```
-
-#### Record Deletion
-
-When a DNS record is deleted:
-
-```
+Successfully updated MX record for '@' in domain 'example.com' — changed content from '10 mail.example.com.' to '20 backup.example.com.'
 Deleting TXT record for 'www' with content: "v=spf1 -all"
 Successfully deleted TXT record for 'www'
 ```
 
-### Zone Operations
+### Bulk Delete (batch actions)
 
-#### Zone Creation
+```
+Deleted: www A
+Deleted: mail MX
+Failed to delete: _dmarc TXT
+Bulk delete: 2 deleted, 1 failed.
+```
+
+### Global Search & Replace
+
+```
+[test123.com] @ MX — content replaced
+Replace complete: 1 replaced, 0 failed.
+```
+
+### Zone Operations
 
 ```
 Adding zone example.com...
-SUCCESS: Zone example.com added successfully
-```
-
-#### Zone Deletion
-
-```
+Zone example.com added successfully
 Deleting zone example.com...
-SUCCESS: Zone example.com deleted successfully
+Zone example.com deleted successfully
 ```
 
-### Synchronization Events
+### Sync and Connectivity
 
 ```
-Syncing data...
-Cached 5 zones
-SUCCESS: Data synchronized successfully
+Retrieved 5 zones from API
+Last sync: 35 sec ago
+```
+
+### Import/Export
+
+```
+Exported example.com to /home/user/example-com.json
+Import complete: 12 records created, 0 failed
+```
+
+### Token Management
+
+```
+Token 'ci-deploy' created successfully
+Token 'old-token' deleted
+Policy saved for test123.com
 ```
 
 ### Error Messages
 
-Error messages include both user-friendly descriptions and technical details:
+```
+API Error 400: Another RRset with the same subdomain and type exists for this domain.
+API Error 429: Rate limit exceeded — reduce API Rate Limit in Settings
+API Error 403: Insufficient permissions (perm_manage_tokens required)
+```
+
+---
+
+## File Logging
+
+Python log records are written to:
 
 ```
-API Error: Error 400: Another RRset with the same subdomain and type exists for this domain. (Try modifying it.)
-Details: {'non_field_errors': ['Another RRset with the same subdomain and type exists for this domain. (Try modifying it.)']}
+~/.config/desecqt/logs/desec_qt.log
 ```
 
-## Visual Indicators
+Format:
+```
+2026-02-23 06:05:19,343 - api_client - INFO - GET /domains/ → 200 (0.31 s)
+2026-02-23 06:05:19,421 - cache_manager - DEBUG - Cached 5 zones (L1 + L2 + L3)
+```
 
-The Log Console displays messages with color-coding:
-- **Green**: Success messages
-- **Blue**: Informational messages
-- **Orange**: Warnings
-- **Red**: Errors
+Enable **debug mode** (**File → Settings → Enable debug mode**) to include `DEBUG`-level entries.
 
-## Implementation
+---
 
-### Logging Components
+## Implementation Details
 
-1. **Python Logger**: Foundation for console logging
-2. **Signal/Slot Mechanism**: Used for emitting log messages from components
-3. **LogWidget Class**: Displays and formats log messages in the UI
-4. **Message Signal**: `log_message` and `log_signal` used to transmit log data
+### Signal/Slot Chain
 
-### Code Example
+```
+component.log_message.emit(message, level)
+    → MainWindow.log_message_handler(message, level)
+        → LogWidget.add_message(message, level)
+```
+
+Workers (bulk delete, search & replace, import) emit `log_message` signals directly; the main window routes them to the log widget.
+
+### LogWidget API
 
 ```python
-# Emitting a log message from a component
-self.log_message.emit(f"Successfully created {record_type} record for '{subname}' with content: {content_summary}", "success")
-
-# Handling in the main window
-def log_message_handler(self, message, level="info"):
-    """Handle log messages from components and update the log widget."""
-    getattr(logger, level)(message)  # Log to console
-    self.log_widget.add_log_entry(message, level)  # Update UI
+log_widget.add_message(message, level='info')  # Append a new entry
+log_widget.clear_log()                          # Clear all entries
 ```
 
-## Best Practices
+### Best Practices
 
-1. **Meaningful Context**: Always include relevant entity names and identifiers
-2. **Before/After State**: For updates, show both old and new values
-3. **Clear Outcomes**: Explicitly state if an operation succeeded or failed
-4. **Avoid Sensitive Data**: Never log authentication tokens or passwords
-5. **Consistent Format**: Follow established message patterns
-
-## Error Handling Integration
-
-The logging system is tightly integrated with error handling:
-
-1. API request errors are parsed for meaningful messages
-2. UI components display appropriate error notifications
-3. Detailed technical information is available for debugging
-4. Common error conditions (like duplicate records) have specialized handling
-
-By providing detailed, context-rich log messages, the application maintains transparency about all operations and helps users understand what actions have been performed on their DNS records.
+- Always include entity names (zone, subdomain, record type) in log messages
+- Show old → new values for update operations
+- Log both per-item results and an overall summary for batch operations
+- Never log API tokens, passwords, or other credentials

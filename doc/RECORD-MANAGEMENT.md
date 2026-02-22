@@ -1,180 +1,155 @@
-# deSEC Qt DNS Manager: Record Management
+# deSEC Qt DNS Manager — Record Management
 
-This document provides information about managing DNS records in the deSEC Qt DNS Manager application.
+## Supported Record Types
 
-## Record Types
+The application supports 37 record types via the deSEC API:
 
-The application supports all the record types offered by the deSEC API, including:
+A, AAAA, AFSDB, APL, CAA, CDNSKEY, CERT, CNAME, DHCID, DNAME, DNSKEY, DLV, DS, EUI48, EUI64, HINFO, HTTPS, KX, L32, L64, LOC, LP, MX, NAPTR, NID, NS, OPENPGPKEY, PTR, RP, SMIMEA, SPF, SRV, SSHFP, SVCB, TLSA, TXT, URI
 
-- **A/AAAA Records**: IPv4 and IPv6 address records
-- **CNAME Records**: Canonical name records for aliasing
-- **MX Records**: Mail exchange records for email routing
-- **TXT Records**: Text records for various verification purposes
-- **SRV Records**: Service records for specific services
-- **NS Records**: Nameserver records
-- And many more specialized types
+> **Note — DNSSEC types**: `DNSKEY`, `DS`, and `CDNSKEY` are auto-managed by deSEC. The API allows adding *extra* values for advanced multi-signer setups only — misuse can break DNSSEC for your domain. `CDS` is fully managed by deSEC and cannot be written via the API (returns 403); it is excluded from the type list entirely.
 
-For a complete list of supported record types, please refer to the deSEC API documentation or check the record type dropdown in the "Add Record" dialog.
+Each type has a format hint, realistic example, tooltip, and optional regex validation shown in the Add/Edit dialog.
+
+---
 
 ## TTL Management
 
-### Limitations
+The deSEC API enforces the following TTL range for standard accounts:
 
-The deSEC DNS API enforces the following Time-To-Live (TTL) limitations:
+| Limit | Value |
+|-------|-------|
+| Minimum | 3600 seconds (1 hour) |
+| Maximum | 86400 seconds (24 hours) |
 
-- **Minimum TTL**: 3600 seconds (1 hour)
-- **Maximum TTL**: 86400 seconds (24 hours)
+### Preset Options
 
-These limitations are enforced by the deSEC API and cannot be bypassed within the application. If you need to set TTL values outside this range, you will need to contact deSEC directly to request account-specific adjustments.
+| Value | Label |
+|-------|-------|
+| 3600 | 1 hour *(recommended minimum)* |
+| 7200 | 2 hours |
+| 14400 | 4 hours |
+| 86400 | 24 hours *(maximum)* |
 
-### Available TTL Options
+Lower values (60, 300, 600, 900, 1800) are shown for completeness but will typically be rejected by the API for standard accounts. Contact [support@desec.io](mailto:support@desec.io) for account-specific TTL adjustments.
 
-The application provides the following preset TTL options:
-
-- 60 seconds (1 minute) - *may be rejected by API*
-- 300 seconds (5 minutes) - *may be rejected by API*
-- 600 seconds (10 minutes) - *may be rejected by API*
-- 900 seconds (15 minutes) - *may be rejected by API*
-- 1800 seconds (30 minutes) - *may be rejected by API*
-- 3600 seconds (1 hour) - **recommended minimum**
-- 7200 seconds (2 hours)
-- 14400 seconds (4 hours)
-- 86400 seconds (24 hours) - **maximum allowed**
-
-Please note that while the application offers TTL values below 3600 seconds for special cases, the deSEC API will typically reject these values for standard accounts. If you need to set shorter TTLs, please contact [support@desec.io](mailto:support@desec.io) for account-specific adjustments and consider [supporting the project](https://desec.io/donate).
+---
 
 ## Multiline Record Content
 
-The deSEC Qt DNS Manager application supports entering multiple values for record content, with each value on a separate line. This is particularly useful for record types like NS, MX, TXT, A or AAAA records where you might have multiple values:
+Multiple values for a single RRset are entered one per line in the content area:
 
-### Display Options
-
-By default, the application shows only the first 3 lines of multiline records followed by a count of additional entries. This helps keep the interface clean and readable.
-
-To view all content lines for multiline records:
-
-1. Go to the **View** menu
-2. Toggle the **Show Multiline Records** option
-
-This setting is persisted across application restarts and applies to all record types. It's particularly useful when working with complex DNS configurations that have many entries per record type.
-
-```text
+```
 10 mail1.example.com.
 20 mail2.example.com.
+30 mail3.example.com.
 ```
 
-While this syntax (multiple values separated by newlines) is not valid in a traditional zone file format, the deSEC API handles this appropriately by:
+The deSEC API accepts these as an array of record values (`records` field). By default the table shows the first 3 lines; toggle **View → Show Multiline Records** to see all lines.
 
-1. Accepting the multiline input as separate record values in the API request
-2. Splitting these values into separate records on the DNS server side
-3. Returning them as an array of records in subsequent API responses
+---
 
-This behavior is documented in the [deSEC API documentation](https://desec.readthedocs.io/en/latest/dns/rrsets.html), where the `records` field is defined as an array that can contain multiple values.
+## Record Operations
 
-Using multiline input in the application provides convenience and feature parity with the deSEC web interface, allowing you to manage multiple values for a single record type in one operation.
+### Adding a Record
 
-## Record Management Operations
+1. Select a zone from the zone list
+2. Click **Add Record**
+3. Fill in:
+   - **Type** — choose from the dropdown (format hint updates automatically)
+   - **Subname** — leave blank for apex (`@`), or enter e.g. `www`, `mail`
+   - **TTL** — select a preset
+   - **Content** — one value per line; see format hint below the field
+4. Click **OK**
 
-### Adding Records
+### Editing a Record
 
-To add a new DNS record:
+1. Select a zone
+2. Either:
+   - Click **Edit** in the Actions column for that row
+   - Double-click the row
+3. Modify as needed
+4. Click **OK**
 
-1. Select a domain from the zone list
-2. Click the "Add Record" button (or use keyboard shortcuts - see below)
-3. Fill in the record details:
-   - Subdomain (e.g., "www" or leave blank for apex record)
-   - Record type (e.g., A, AAAA, CNAME)
-   - TTL value
-   - Record content (can enter multiple values, one per line)
-4. Click "OK" to save the record
+### Deleting a Single Record
 
-### Editing Records
+1. Select a zone
+2. Either:
+   - Click **Delete** in the Actions column
+   - Select the row and press the **Delete** key
+3. Confirm the deletion dialog
 
-To edit an existing record:
+### Batch Deleting Records
 
-1. Select a domain from the zone list
-2. Find the record in the records table
-3. Either:
-   - Click the "Edit" button for that record
-   - Double-click on the record row
-4. Update the record details
-5. Click "OK" to save changes
+1. Check the checkbox in the leftmost column for each record to delete
+   - Use **Select All** to check all visible rows
+   - Use **Select None** to uncheck all
+2. Click **Delete Selected (N)** (red button — count updates live)
+3. Confirm the bulk deletion dialog
+4. A background worker deletes each record and logs success/failure individually
+5. The table refreshes automatically when complete
 
-### Deleting Records
+> All batch controls are disabled in offline mode.
 
-To delete a record:
-
-1. Select a domain from the zone list
-2. Find the record in the records table
-3. Either:
-   - Click the "Delete" button for that record
-   - Select the record and press the **Delete** key
-4. Confirm the deletion when prompted
+---
 
 ## Record Sorting and Filtering
 
-### Sorting Records
+### Sorting
 
-The records table supports sorting by the following columns:
+Click any column header to sort:
+- **Name** — alphabetical by subdomain
+- **Type** — alphabetical by record type
+- **TTL** — numerical
+- **Content** — alphabetical
 
-- **Name**: Sort by subdomain name (click column header)
-- **Type**: Sort by record type (click column header)
-- **TTL**: Sort by TTL value (click column header)
-- **Content**: Sort by record content (click column header)
+First click: ascending ↑; second click: descending ↓; third click: default (name ascending).
+Sort preference is maintained when switching zones and after add/edit/delete.
 
-Click the column header to toggle between ascending and descending order.
+### Filtering
 
-### Filtering Records
+Type in the search field above the table. Filtering is:
+- Real-time (updates as you type)
+- Case-insensitive
+- Applied across all fields (name, type, TTL, content)
 
-To filter records:
+Press `Ctrl+F` to focus the filter field; `Escape` clears it.
 
-1. Enter search text in the "Search" field above the records table
-2. The table will filter in real-time to show only matching records
-3. Filtering works across all fields (name, type, and content)
-4. Use **Ctrl+F** to quickly focus the record filter field
-5. Use **Escape** to clear the filter
+---
 
-The filter is case-insensitive and supports partial matching, making it easy to find records even in large zone files.
+## Global Search & Replace
 
-## Caching Behavior
+For cross-zone record operations, use **File → Global Search & Replace**. See [UI-FEATURES.md](./UI-FEATURES.md#global-search--replace) for full documentation.
 
-The application uses a selective caching approach for optimal performance and responsiveness:
+---
 
-1. Zone lists are cached during synchronization (performed every 10 minutes by default)
-2. Records for a zone are loaded and cached only when the zone is selected
-3. When adding, modifying, or deleting records:
-   - The application immediately updates the UI to reflect your changes
-   - Changes are sent to the deSEC API in real-time
-   - The zone's cache is invalidated to ensure fresh data on next access
-4. If offline, the application will use cached records but editing is disabled
+## Caching Behaviour
 
-This selective caching approach ensures the application remains responsive even with many zones, while still providing offline access to previously viewed records.
+| Operation | Cache effect |
+|-----------|-------------|
+| Load records | Cached when zone is selected; served from cache on subsequent views |
+| Add / Edit / Delete | Domain cache cleared immediately; table refreshed from API |
+| Bulk delete | Domain cache cleared after worker completes |
+| Zone sync | Full zone list refreshed; individual record caches preserved |
 
-For more comprehensive information about the caching system, please refer to the [CACHING.md](CACHING.md) document.
+Records are loaded on demand (not pre-cached for all zones) to keep startup fast and avoid rate limiting.
+
+---
 
 ## Troubleshooting
 
-### Common Error Messages
+### Common API Errors
 
-- **"Another RRset with the same subdomain and type exists"**: You cannot have multiple record sets with the same name and type. Edit the existing record instead.
-- **"Ensure this value is less than or equal to 86400"**: TTL value exceeds the maximum allowed by deSEC.
-- **"Ensure this value is greater than or equal to 3600"**: TTL value is below the minimum allowed by deSEC.
+| Error | Cause | Solution |
+|-------|-------|---------|
+| "Another RRset with the same subdomain and type exists" | Duplicate RRset | Edit the existing record instead of creating a new one |
+| "Ensure this value is less than or equal to 86400" | TTL too high | Use a TTL ≤ 86400 |
+| "Ensure this value is greater than or equal to 3600" | TTL too low | Use a TTL ≥ 3600 (or request adjustment from deSEC) |
+| 403 Forbidden on DNSKEY / DS / CDNSKEY | Auto-managed DNSSEC record | Only add extra values for multi-signer setups; see tooltip warning |
+| 429 Too Many Requests | API rate limit hit | Lower the rate limit in Settings (File → Settings → API Rate Limit) |
 
-### API Errors
+### Validation Errors
 
-If you encounter API errors when managing records:
-
-1. Check your internet connection
-2. Verify your API token is valid
-3. Ensure your record format meets deSEC requirements
-4. Check the application logs for detailed error information
-
-#### Common API Rate Limiting
-
-The deSEC API enforces rate limiting that may occasionally trigger when performing rapid operations. The application handles these gracefully by:
-
-1. Showing clear error messages when rate limiting occurs
-2. Implementing configurable throttling for bulk operations
-3. Providing detailed logs with request/response data for troubleshooting
-
-If you frequently encounter rate limiting errors, consider increasing the throttle delay in the settings.
+The record dialog validates input client-side before submission:
+- Format regex for supported types (e.g. CAA must match `\d+ (issue|issuewild|iodef) "..."`)
+- Trailing-dot check for hostname fields (CNAME, MX, NS, etc.)
+- Invalid content is flagged in red; a brief description is shown below the content area

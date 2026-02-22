@@ -8,104 +8,116 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ![Main Window](main_window.png)
 
-**`main_window.png`** (130 KB)
+**`main_window.png`**
 - Primary application interface showing the two-pane layout
-- Zone list on the left, DNS records table on the right
-- Demonstrates the clean, modern UI with toolbar and status information
-- Shows active zone management and record display
-
-### Import/Export Functionality
-
-![Import Window](import_window.png)
-
-**`import_window.png`** (85 KB)
-- Import dialog showing file selection and format options
-- Demonstrates the various import formats supported (JSON, YAML, BIND, djbdns)
-- Shows target zone selection and import mode options (Append/Merge/Replace)
-
-![Import Window - Progress](import_window_wizard_running.png)
-
-**`import_window_wizard_running.png`** (118 KB)
-- Import process in progress with real-time progress tracking
-- Shows the progress bar, status updates, and rate limiting controls
-- Demonstrates the enhanced user feedback during import operations
-
-![Export Window](export_window.png)
-
-**`export_window.png`** (50 KB)
-- Export dialog with zone selection and format options
-- Shows export configuration options and auto-generated filename
-- Demonstrates the comprehensive export functionality
-
-### Multi-Profile Support
-
-![Multi-Profile Window](multi_profile_window.png)
-
-**`multi_profile_window.png`** (49 KB)
-- Profile management interface showing multiple user profiles
-- Demonstrates profile creation, switching, and management capabilities
-- Shows the isolated environment support for different deSEC accounts
+- Zone list on the left (with "Total zones: 1/100" account limit display), DNS records table on the right
+- Records table with checkbox column for batch selection, Select All / Select None / Delete Selected toolbar
+- Log console at the bottom with colour-coded messages
+- Status bar showing last sync time and online/offline state
 
 ### Configuration
 
 ![Settings Window](settings_window.png)
 
-**`settings_window.png`** (56 KB)
-- Application settings and configuration interface
-- Shows API configuration, theme selection, and other preferences
-- Demonstrates the built-in configuration editor
+**`settings_window.png`**
+- Configuration dialog showing Theme Settings (Light / Dark / System Default) and per-mode theme selection
+- API URL, token (masked), sync interval, and API rate limit controls
+- Debug mode toggle and note about re-synchronisation on credential change
 
-### About Dialog
+### Global Search & Replace
 
-![About Window](about_window.png)
+![Search & Replace — Results](search_replace_search.png)
 
-**`about_window.png`** (38 KB)
-- Application about dialog showing version information
-- Displays application details, developer information, and version number
-- Shows the clean, professional about interface
+**`search_replace_search.png`**
+- Global Search & Replace dialog after running a search across all zones
+- Search filters: Subname, Content, Type, TTL, Zone, and optional regex mode
+- Results table with per-row checkboxes, Select All / Select None, and Export Results
+- Replace section showing content find → replace and subname/TTL change fields
 
-### Record Timestamp Tooltips
+![Search & Replace — Applied](search_replace_applied.png)
 
-![Record List Tooltip](record_list_tooltip.png)
+**`search_replace_applied.png`**
+- Same dialog after applying a content replacement
+- Result row highlighted in green; status reads "Replace complete — 1 replaced"
+- Change Log section showing old vs. new values for each modified record
 
-**`record_list_tooltip.png`** (45 KB)
-- Demonstrates the hover tooltip feature showing record timestamps
-- Shows creation and last modification timestamps when hovering over record entries
-- Clean timestamp display without cluttering the interface
+### Token Management
 
-## Usage in Documentation
+![Token Manager](token_manager.png)
 
-These screenshots are referenced in the main README.md and various documentation files to provide visual context for the application's features and capabilities.
+**`token_manager.png`**
+- API Token Manager with a list of tokens (name, created, last used, valid status, permissions)
+- Right panel: Details tab showing token ID, owner, validity, and editable settings (name, permissions, expiration, allowed subnets)
+- RRset Policies tab for fine-grained access control
+- New Token / Delete / Refresh / Save Changes controls
 
-### Main README Reference
-- `main_window.png` is featured prominently in the main README.md as the primary application showcase
+![Create New Token](token_create.png)
 
-### Feature Documentation
-- Import/export screenshots support the comprehensive import/export documentation
-- Profile management screenshots illustrate the multi-profile functionality
-- Settings screenshots demonstrate the configuration capabilities
+**`token_create.png`**
+- Create New Token dialog with Token Settings group
+- Name field and permission checkboxes: perm_create_domain, perm_delete_domain, perm_manage_tokens, auto_policy
+- Expiration section: Max Age and Max Unused Period
+- Allowed Subnets text area (pre-filled with 0.0.0.0/0 and ::/0)
 
-## Screenshot Guidelines
+![Add Policy](token_policy_add.png)
 
-When updating or adding new screenshots:
+**`token_policy_add.png`**
+- Add Policy dialog for defining fine-grained RRset access rules
+- Fields: Domain, Subname, Type (dropdown), and Write permission toggle
 
-1. **Consistency**: Use the same theme and window size for consistency
-2. **Content**: Ensure screenshots show meaningful, representative data
-3. **Quality**: Use high-resolution PNG format for clarity
-4. **Privacy**: Avoid showing sensitive information like real API tokens
-5. **Currency**: Keep screenshots up-to-date with the latest UI changes
+![Edit Policy](token_policy_edit.png)
+
+**`token_policy_edit.png`**
+- Edit Policy dialog with the same fields, pre-filled with existing policy values
+
+### Import/Export
+
+![Export Window](export_window.png)
+
+**`export_window.png`**
+- Import/Export dialog — Export tab
+- Zone selection dropdown, format options (JSON, YAML, BIND, djbdns), metadata toggle
+- Output file field with Browse and Auto-Generate buttons, Export Zone action button
+- Enable Bulk Export checkbox for multi-zone ZIP export mode
+
+![Import Window](import_window.png)
+
+**`import_window.png`**
+- Import/Export dialog — Import tab
+- File selection, format options, target zone selector with auto-create support
+- Existing Records Handling: Append / Merge / Replace modes with descriptions
+- Import Preview section and Import Zone action button
+
+### Multi-Profile Support
+
+![Profile Management](profile_management.png)
+
+**`profile_management.png`**
+- Profile Management dialog listing available profiles with current profile highlighted
+- Profile Information panel: name, display name, created date, last used date
+- Controls: Switch To, Create New, Rename, Delete, Refresh
+
+![Create New Profile](profile_create.png)
+
+**`profile_create.png`**
+- Create New Profile dialog with Profile Name and Display Name fields
+- Help text explaining naming constraints
 
 ## File Sizes
 
 | Screenshot | Size | Purpose |
 |------------|------|---------|
-| `main_window.png` | 130 KB | Primary interface showcase |
-| `import_window_wizard_running.png` | 118 KB | Import progress demonstration |
-| `import_window.png` | 85 KB | Import dialog overview |
-| `settings_window.png` | 56 KB | Configuration interface |
-| `export_window.png` | 50 KB | Export functionality |
-| `multi_profile_window.png` | 49 KB | Profile management |
-| `record_list_tooltip.png` | 45 KB | Record timestamp tooltips |
-| `about_window.png` | 38 KB | Application information |
+| `main_window.png` | 639 KB | Primary interface showcase |
+| `search_replace_applied.png` | 452 KB | Search & Replace after apply, with change log |
+| `token_manager.png` | 384 KB | Token Manager overview |
+| `search_replace_search.png` | 337 KB | Search & Replace results view |
+| `import_window.png` | 362 KB | Import dialog |
+| `token_create.png` | 268 KB | Create New Token dialog |
+| `settings_window.png` | 216 KB | Configuration dialog |
+| `export_window.png` | 204 KB | Export dialog |
+| `profile_management.png` | 199 KB | Profile Management dialog |
+| `token_policy_add.png` | 141 KB | Add Policy dialog |
+| `token_policy_edit.png` | 132 KB | Edit Policy dialog |
+| `profile_create.png` | 102 KB | Create New Profile dialog |
 
-**Total**: ~570 KB for complete visual documentation of the application.
+**Total**: ~3.3 MB for complete visual documentation of the application.
