@@ -6,7 +6,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ### Main Interface
 
-<img src="main_window.png" width="75%">
+<img src="main_window.png" width="100%">
 
 **`main_window.png`**
 - Primary application interface showing the two-pane layout
@@ -26,7 +26,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ### Global Search & Replace
 
-<img src="search_replace_search.png" width="60%">
+<img src="search_replace_search.png" width="100%">
 
 **`search_replace_search.png`**
 - Global Search & Replace dialog after running a search across all zones
@@ -34,7 +34,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 - Results table with per-row checkboxes, Select All / Select None, and Export Results
 - Replace section showing content find → replace and subname/TTL change fields
 
-<img src="search_replace_applied.png" width="60%">
+<img src="search_replace_applied.png" width="100%">
 
 **`search_replace_applied.png`**
 - Same dialog after applying a content replacement
@@ -43,7 +43,7 @@ This directory contains screenshots of the deSEC Qt DNS Manager application show
 
 ### Token Management
 
-<img src="token_manager.png" width="75%">
+<img src="token_manager.png" width="100%">
 
 **`token_manager.png`**
 - API Token Manager with a list of tokens (name, created, last used, valid status, permissions)

@@ -5,6 +5,12 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1-beta] - 2026-02-23
+
+### Fixed in 0.12.1-beta
+
+- **Documentation** — screenshot widths in `img/README.md` adjusted; full-width screenshots (main window, search & replace, token manager) now display at 100% while smaller dialogs remain pinned to relative widths to avoid upscaling on GitHub
+
 ## [0.12.0-beta] - 2026-02-23
 
 ### Added in 0.12.0-beta
