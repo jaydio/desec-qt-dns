@@ -753,6 +753,9 @@ class MainWindow(QtWidgets.QMainWindow):
         from search_replace_dialog import SearchReplaceDialog
         dialog = SearchReplaceDialog(self.api_client, self.cache_manager, self)
         dialog.exec()
+        # Refresh the currently open zone so any replaced records are reflected immediately
+        if hasattr(self, 'record_widget') and self.record_widget.current_domain:
+            self.record_widget.refresh_records()
 
     def show_import_export_dialog(self):
         """Show the import/export dialog."""
