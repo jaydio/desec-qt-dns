@@ -28,16 +28,14 @@ class ConfigManager:
         self._config = {
             "api_url": self.DEFAULT_API_URL,
             "auth_token": "",
-            "sync_interval_minutes": 10,  # Default sync interval in minutes
+            "sync_interval_minutes": 15,  # Default sync interval in minutes
             "debug_mode": False,
             "show_log_console": True,  # Default to showing log console
             "keepalive_interval": 60,  # Default keepalive check interval in seconds
             "offline_mode": False,  # Default to online mode
             "show_multiline_records": True,  # Default to full display of multiline records
-            "api_rate_limit": 2.0,  # Default API requests per second (0 = no limit)
-            "theme_type": "light",  # Default theme type (light, dark, system)
-            "light_theme_id": "light_plus",  # Default light theme ID
-            "dark_theme_id": "dark_plus"  # Default dark theme ID
+            "api_rate_limit": 1.0,  # Default API requests per second (0 = no limit)
+            "theme_type": "auto",  # Default theme type: auto, light, dark
         }
         self._ensure_config_dir_exists()
         self._load_config()
@@ -219,7 +217,7 @@ class ConfigManager:
         Returns:
             float: The maximum requests per second (0 = no limit)
         """
-        return self._config.get("api_rate_limit", 2.0)  # Default to 2 requests per second
+        return self._config.get("api_rate_limit", 1.0)  # Default to 1 request per second
     
     def set_api_rate_limit(self, rate_limit):
         """Set the API request rate limit.
@@ -259,79 +257,21 @@ class ConfigManager:
         self._config["api_throttle_seconds"] = seconds
         
     def get_theme_type(self):
-        """Get the theme type (light, dark, or system).
-        
+        """Get the theme type.
+
         Returns:
-            str: The current theme type
+            str: 'auto', 'light', or 'dark'
         """
-        return self._config.get("theme_type", "light")  # Default to light theme
-    
+        raw = self._config.get("theme_type", "auto")
+        # Migrate legacy 'system' value from old config files
+        if raw == "system":
+            return "auto"
+        return raw
+
     def set_theme_type(self, theme_type):
         """Set the theme type.
-        
+
         Args:
-            theme_type (str): Theme type ('light', 'dark', or 'system')
+            theme_type (str): 'auto', 'light', or 'dark'
         """
         self._config["theme_type"] = theme_type
-    
-    def get_theme_id(self):
-        """Get the currently active theme ID based on theme type.
-    
-        Returns:
-            str: The current theme ID
-        """
-        theme_type = self.get_theme_type()
-        if theme_type == "light":
-            return self.get_light_theme_id()
-        elif theme_type == "dark":
-            return self.get_dark_theme_id()
-        else:  # system theme
-            # For system theme, we'll return the appropriate theme based on system detection
-            # This will be handled by ThemeManager when applied
-            return self._config.get("theme_id", "light_plus")
-    
-    def set_theme_id(self, theme_id):
-        """Set the theme ID for the current theme type.
-        
-        Args:
-            theme_id: The theme identifier
-        """
-        theme_type = self.get_theme_type()
-        if theme_type == "light":
-            self.set_light_theme_id(theme_id)
-        elif theme_type == "dark":
-            self.set_dark_theme_id(theme_id)
-        # Also store in legacy theme_id for backward compatibility
-        self._config["theme_id"] = theme_id
-        
-    def get_light_theme_id(self):
-        """Get the light theme ID.
-        
-        Returns:
-            str: The light theme ID
-        """
-        return self._config.get("light_theme_id", "light_plus")
-    
-    def set_light_theme_id(self, theme_id):
-        """Set the light theme ID.
-        
-        Args:
-            theme_id: The light theme identifier
-        """
-        self._config["light_theme_id"] = theme_id
-    
-    def get_dark_theme_id(self):
-        """Get the dark theme ID.
-        
-        Returns:
-            str: The dark theme ID
-        """
-        return self._config.get("dark_theme_id", "dark_plus")
-    
-    def set_dark_theme_id(self, theme_id):
-        """Set the dark theme ID.
-        
-        Args:
-            theme_id: The dark theme identifier
-        """
-        self._config["dark_theme_id"] = theme_id

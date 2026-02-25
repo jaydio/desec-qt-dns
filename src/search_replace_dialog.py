@@ -11,9 +11,15 @@ import csv
 import json
 import logging
 import re
-from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import QFileDialog, QMessageBox
+from qfluentwidgets import (PushButton, LineEdit, CheckBox,
+                             ProgressBar, PlainTextEdit, TableWidget,
+                             LargeTitleLabel)
+from fluent_styles import container_qss
+from confirm_drawer import DeleteConfirmDrawer
+from notify_drawer import NotifyDrawer
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +31,11 @@ DNS_RECORD_TYPES = [
     'TLSA', 'TXT', 'URI',
 ]
 
-COL_CHECK   = 0
-COL_ZONE    = 1
-COL_SUBNAME = 2
-COL_TYPE    = 3
-COL_TTL     = 4
-COL_CONTENT = 5
+COL_ZONE    = 0
+COL_SUBNAME = 1
+COL_TYPE    = 2
+COL_TTL     = 3
+COL_CONTENT = 4
 
 
 # ---------------------------------------------------------------------------
@@ -38,8 +43,8 @@ COL_CONTENT = 5
 # ---------------------------------------------------------------------------
 
 class _SearchWorker(QThread):
-    progress_update = pyqtSignal(int, str)
-    finished        = pyqtSignal(bool, str, list)
+    progress_update = Signal(int, str)
+    finished        = Signal(bool, str, list)
 
     def __init__(self, api_client, cache_manager,
                  filter_subname, filter_type, filter_content,
@@ -159,10 +164,10 @@ class _SearchWorker(QThread):
 # ---------------------------------------------------------------------------
 
 class _ReplaceWorker(QThread):
-    progress_update = pyqtSignal(int, str)
-    record_done     = pyqtSignal(int, bool, str)
-    change_logged   = pyqtSignal(str)
-    finished        = pyqtSignal(int, int)
+    progress_update = Signal(int, str)
+    record_done     = Signal(int, bool, str)
+    change_logged   = Signal(str)
+    finished        = Signal(int, int)
 
     def __init__(self, api_client, cache_manager, items,
                  content_find, content_replace, new_subname, new_ttl):
@@ -279,10 +284,10 @@ class _ReplaceWorker(QThread):
 # ---------------------------------------------------------------------------
 
 class _DeleteWorker(QThread):
-    progress_update = pyqtSignal(int, str)
-    record_done     = pyqtSignal(int, bool, str)
-    change_logged   = pyqtSignal(str)
-    finished        = pyqtSignal(int, int)
+    progress_update = Signal(int, str)
+    record_done     = Signal(int, bool, str)
+    change_logged   = Signal(str)
+    finished        = Signal(int, int)
 
     def __init__(self, api_client, cache_manager, items):
         super().__init__()
@@ -327,25 +332,24 @@ class _DeleteWorker(QThread):
 # Main dialog
 # ---------------------------------------------------------------------------
 
-class SearchReplaceDialog(QtWidgets.QDialog):
+class SearchReplaceInterface(QtWidgets.QWidget):
     """
-    Global Search & Replace dialog.
+    Global Search & Replace page (Fluent sidebar navigation).
     Searches records across all zones by subname/type/content/TTL/zone,
     previews matches with checkboxes, then applies bulk replacements or deletions.
     """
 
     def __init__(self, api_client, cache_manager, parent=None):
         super().__init__(parent)
+        self.setObjectName("searchReplaceInterface")
         self.api_client      = api_client
         self.cache_manager   = cache_manager
         self._search_worker  = None
         self._replace_worker = None
         self._delete_worker  = None
-        self.setWindowTitle("Global Search & Replace")
-        self.setModal(True)
-        self.setMinimumSize(960, 720)
-        self.resize(1100, 800)
         self._setup_ui()
+        self._delete_drawer = DeleteConfirmDrawer(parent=self)
+        self._notify_drawer = NotifyDrawer(parent=self)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -353,14 +357,17 @@ class SearchReplaceDialog(QtWidgets.QDialog):
 
     def _setup_ui(self):
         outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(36, 20, 36, 20)
         outer.setSpacing(8)
+
+        outer.addWidget(LargeTitleLabel("Search & Replace"))
 
         # ── Search group ──────────────────────────────────────────────
         search_group = QtWidgets.QGroupBox("Search")
         search_grid  = QtWidgets.QGridLayout(search_group)
 
         search_grid.addWidget(QtWidgets.QLabel("Subname contains:"), 0, 0)
-        self._sub_edit = QtWidgets.QLineEdit()
+        self._sub_edit = LineEdit()
         self._sub_edit.setPlaceholderText("e.g. www  (blank = any)")
         self._sub_edit.returnPressed.connect(self._run_search)
         search_grid.addWidget(self._sub_edit, 0, 1)
@@ -373,30 +380,27 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         search_grid.addWidget(self._type_combo, 0, 3)
 
         search_grid.addWidget(QtWidgets.QLabel("Content contains:"), 1, 0)
-        self._content_edit = QtWidgets.QLineEdit()
+        self._content_edit = LineEdit()
         self._content_edit.setPlaceholderText("e.g. 1.2.3.4  (blank = any)")
         self._content_edit.returnPressed.connect(self._run_search)
         search_grid.addWidget(self._content_edit, 1, 1)
 
         search_grid.addWidget(QtWidgets.QLabel("TTL equals:"), 1, 2)
-        self._ttl_edit = QtWidgets.QLineEdit()
+        self._ttl_edit = LineEdit()
         self._ttl_edit.setPlaceholderText("e.g. 3600  (blank = any)")
         self._ttl_edit.setMaximumWidth(120)
         self._ttl_edit.returnPressed.connect(self._run_search)
         search_grid.addWidget(self._ttl_edit, 1, 3)
 
         search_grid.addWidget(QtWidgets.QLabel("Zone contains:"), 2, 0)
-        self._zone_edit = QtWidgets.QLineEdit()
+        self._zone_edit = LineEdit()
         self._zone_edit.setPlaceholderText("e.g. example.com  (blank = all zones)")
         self._zone_edit.returnPressed.connect(self._run_search)
         search_grid.addWidget(self._zone_edit, 2, 1)
 
-        self._regex_check = QtWidgets.QCheckBox("Use regex")
+        self._regex_check = CheckBox("Use regex")
 
         _regex_help = QtWidgets.QLabel("(?)")
-        _regex_help.setStyleSheet(
-            "QLabel { color: palette(highlight); font-weight: bold; }"
-        )
         _regex_help.setToolTip(
             "<html><body>"
             "When enabled, Subname / Content / Zone filters are treated as "
@@ -426,7 +430,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         _regex_layout.addStretch()
         search_grid.addWidget(_regex_row, 2, 2, 1, 2)
 
-        self._search_btn = QtWidgets.QPushButton("Search All Zones")
+        self._search_btn = PushButton("Search All Zones")
         self._search_btn.setDefault(True)
         self._search_btn.clicked.connect(self._run_search)
         search_grid.addWidget(self._search_btn, 0, 4, 3, 1,
@@ -441,25 +445,24 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         results_layout = QtWidgets.QVBoxLayout(results_group)
 
         self._results_label = QtWidgets.QLabel("Run a search to see matching records.")
-        self._results_label.setStyleSheet("color: palette(placeholdertext);")
         results_layout.addWidget(self._results_label)
 
-        self._table = QtWidgets.QTableWidget()
-        self._table.setColumnCount(6)
+        self._table = TableWidget()
+        self._table.setColumnCount(5)
         self._table.setHorizontalHeaderLabels(
-            ["", "Zone", "Subname", "Type", "TTL", "Content"]
+            ["Zone", "Subname", "Type", "TTL", "Content"]
         )
         self._table.verticalHeader().setVisible(False)
+        self._table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
         self._table.setSelectionMode(
-            QtWidgets.QAbstractItemView.SelectionMode.NoSelection
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
         self._table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
-        self._table.horizontalHeader().setSectionResizeMode(
-            COL_CHECK, QtWidgets.QHeaderView.ResizeMode.Fixed
-        )
-        self._table.setColumnWidth(COL_CHECK, 28)
+        self._table.setAlternatingRowColors(True)
         for col in (COL_ZONE, COL_SUBNAME, COL_TYPE, COL_TTL):
             self._table.horizontalHeader().setSectionResizeMode(
                 col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
@@ -467,21 +470,21 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         self._table.horizontalHeader().setSectionResizeMode(
             COL_CONTENT, QtWidgets.QHeaderView.ResizeMode.Stretch
         )
-        self._table.itemChanged.connect(self._on_item_changed)
+        self._table.itemSelectionChanged.connect(self._update_action_btns)
         results_layout.addWidget(self._table)
 
         sel_row = QtWidgets.QHBoxLayout()
-        self._select_all_btn = QtWidgets.QPushButton("Select All")
+        self._select_all_btn = PushButton("Select All")
         self._select_all_btn.clicked.connect(self._select_all)
         sel_row.addWidget(self._select_all_btn)
 
-        self._select_none_btn = QtWidgets.QPushButton("Select None")
+        self._select_none_btn = PushButton("Select None")
         self._select_none_btn.clicked.connect(self._select_none)
         sel_row.addWidget(self._select_none_btn)
 
         sel_row.addStretch()
 
-        self._export_btn = QtWidgets.QPushButton("Export Results…")
+        self._export_btn = PushButton("Export Results…")
         self._export_btn.setEnabled(False)
         self._export_btn.clicked.connect(self._export_results)
         sel_row.addWidget(self._export_btn)
@@ -490,27 +493,27 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         outer.addWidget(results_group, 1)
 
         # ── Replace group ─────────────────────────────────────────────
-        self._replace_group = QtWidgets.QGroupBox("Replace / Delete (applies to checked rows)")
+        self._replace_group = QtWidgets.QGroupBox("Replace / Delete (applies to selected rows)")
         replace_grid = QtWidgets.QGridLayout(self._replace_group)
 
         replace_grid.addWidget(QtWidgets.QLabel("Content:"), 0, 0)
         find_row = QtWidgets.QHBoxLayout()
-        self._find_edit = QtWidgets.QLineEdit()
+        self._find_edit = LineEdit()
         self._find_edit.setPlaceholderText("Find…")
         find_row.addWidget(self._find_edit)
         find_row.addWidget(QtWidgets.QLabel("→"))
-        self._replace_edit = QtWidgets.QLineEdit()
+        self._replace_edit = LineEdit()
         self._replace_edit.setPlaceholderText("Replace with…")
         find_row.addWidget(self._replace_edit)
         replace_grid.addLayout(find_row, 0, 1, 1, 3)
 
         replace_grid.addWidget(QtWidgets.QLabel("Subname:"), 1, 0)
-        self._new_sub_edit = QtWidgets.QLineEdit()
+        self._new_sub_edit = LineEdit()
         self._new_sub_edit.setPlaceholderText("New subname  (blank = no change)")
         replace_grid.addWidget(self._new_sub_edit, 1, 1)
 
         replace_grid.addWidget(QtWidgets.QLabel("TTL:"), 1, 2)
-        self._new_ttl_edit = QtWidgets.QLineEdit()
+        self._new_ttl_edit = LineEdit()
         self._new_ttl_edit.setPlaceholderText("New TTL  (blank = no change)")
         self._new_ttl_edit.setMaximumWidth(140)
         replace_grid.addWidget(self._new_ttl_edit, 1, 3)
@@ -518,14 +521,13 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         # Stacked action buttons
         btn_col = QtWidgets.QVBoxLayout()
         btn_col.setSpacing(6)
-        self._apply_btn = QtWidgets.QPushButton("Apply to Selected")
+        self._apply_btn = PushButton("Apply to Selected")
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._run_replace)
         btn_col.addWidget(self._apply_btn)
 
-        self._delete_btn = QtWidgets.QPushButton("Delete Selected")
+        self._delete_btn = PushButton("Delete Selected")
         self._delete_btn.setEnabled(False)
-        self._delete_btn.setStyleSheet("QPushButton { color: #c62828; }")
         self._delete_btn.clicked.connect(self._run_delete)
         btn_col.addWidget(self._delete_btn)
 
@@ -537,7 +539,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         # ── Change Log group ──────────────────────────────────────────
         self._log_group = QtWidgets.QGroupBox("Change Log")
         log_layout = QtWidgets.QVBoxLayout(self._log_group)
-        self._log_edit = QtWidgets.QPlainTextEdit()
+        self._log_edit = PlainTextEdit()
         self._log_edit.setReadOnly(True)
         self._log_edit.setFont(QtGui.QFont("Monospace", 9))
         self._log_edit.setFixedHeight(110)
@@ -545,7 +547,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
 
         log_btn_row = QtWidgets.QHBoxLayout()
         log_btn_row.addStretch()
-        clear_log_btn = QtWidgets.QPushButton("Clear Log")
+        clear_log_btn = PushButton("Clear Log")
         clear_log_btn.clicked.connect(self._log_edit.clear)
         log_btn_row.addWidget(clear_log_btn)
         log_layout.addLayout(log_btn_row)
@@ -555,23 +557,27 @@ class SearchReplaceDialog(QtWidgets.QDialog):
 
         # ── Progress + bottom ─────────────────────────────────────────
         progress_row = QtWidgets.QHBoxLayout()
-        self._progress_bar = QtWidgets.QProgressBar()
+        self._progress_bar = ProgressBar()
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setVisible(False)
         progress_row.addWidget(self._progress_bar)
         self._status_label = QtWidgets.QLabel("")
-        self._status_label.setStyleSheet("")
         progress_row.addWidget(self._status_label)
         outer.addLayout(progress_row)
 
-        bottom = QtWidgets.QHBoxLayout()
-        bottom.addStretch()
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        bottom.addWidget(close_btn)
-        outer.addLayout(bottom)
-
+        self.setStyleSheet(container_qss())
         self._set_replace_enabled(False)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.setStyleSheet(container_qss())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_delete_drawer'):
+            self._delete_drawer.reposition(event.size())
+        if hasattr(self, '_notify_drawer'):
+            self._notify_drawer.reposition(event.size())
 
     # ------------------------------------------------------------------
     # Search
@@ -593,15 +599,14 @@ class SearchReplaceDialog(QtWidgets.QDialog):
                     try:
                         re.compile(text)
                     except re.error as e:
-                        QMessageBox.warning(
-                            self, "Invalid Regex",
+                        self._notify_drawer.warning(
+                            "Invalid Regex",
                             f"{label} filter contains an invalid regular expression:\n{e}"
                         )
                         return
 
         self._table.setRowCount(0)
         self._results_label.setText("Searching…")
-        self._results_label.setStyleSheet("color: palette(placeholdertext);")
         self._search_btn.setEnabled(False)
         self._set_replace_enabled(False)
         self._export_btn.setEnabled(False)
@@ -629,32 +634,23 @@ class SearchReplaceDialog(QtWidgets.QDialog):
 
         if not success:
             self._results_label.setText(message)
-            self._results_label.setStyleSheet("color: #c62828;")
             return
 
         self._results_label.setText(message)
-        self._results_label.setStyleSheet(
-            "color: #4caf50;" if matches else "color: palette(placeholdertext);"
-        )
         self._populate_table(matches)
         self._set_replace_enabled(bool(matches))
         self._export_btn.setEnabled(bool(matches))
 
     def _populate_table(self, matches):
-        self._table.blockSignals(True)
         self._table.setRowCount(0)
 
         for match in matches:
             row = self._table.rowCount()
             self._table.insertRow(row)
 
-            chk = QtWidgets.QTableWidgetItem()
-            chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-            chk.setCheckState(Qt.CheckState.Checked)
-            chk.setData(Qt.ItemDataRole.UserRole, match)
-            self._table.setItem(row, COL_CHECK, chk)
-
-            self._table.setItem(row, COL_ZONE,    QtWidgets.QTableWidgetItem(match['zone']))
+            zone_item = QtWidgets.QTableWidgetItem(match['zone'])
+            zone_item.setData(Qt.ItemDataRole.UserRole, match)
+            self._table.setItem(row, COL_ZONE,    zone_item)
             self._table.setItem(row, COL_SUBNAME, QtWidgets.QTableWidgetItem(match.get('subname', '') or '@'))
             self._table.setItem(row, COL_TYPE,    QtWidgets.QTableWidgetItem(match.get('type', '')))
             self._table.setItem(row, COL_TTL,     QtWidgets.QTableWidgetItem(str(match.get('ttl', ''))))
@@ -666,7 +662,6 @@ class SearchReplaceDialog(QtWidgets.QDialog):
             content_item.setToolTip(content_str)
             self._table.setItem(row, COL_CONTENT, content_item)
 
-        self._table.blockSignals(False)
         self._update_action_btns()
 
     # ------------------------------------------------------------------
@@ -676,10 +671,10 @@ class SearchReplaceDialog(QtWidgets.QDialog):
     def _run_replace(self):
         items = self._checked_items()
         if not items:
-            QMessageBox.information(self, "No Selection", "No rows are checked.")
+            self._notify_drawer.info("No Selection", "No rows are selected.")
             return
         if not self.api_client.is_online:
-            QMessageBox.warning(self, "Offline", "Cannot apply changes in offline mode.")
+            self._notify_drawer.warning("Offline", "Cannot apply changes in offline mode.")
             return
 
         content_find = self._find_edit.text()
@@ -687,8 +682,8 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         new_ttl      = self._new_ttl_edit.text().strip()
 
         if not content_find and not new_sub and not new_ttl:
-            QMessageBox.warning(
-                self, "Nothing to Replace",
+            self._notify_drawer.warning(
+                "Nothing to Replace",
                 "Specify at least one replacement: content find, subname, or TTL."
             )
             return
@@ -723,33 +718,38 @@ class SearchReplaceDialog(QtWidgets.QDialog):
     def _run_delete(self):
         items = self._checked_items()
         if not items:
-            QMessageBox.information(self, "No Selection", "No rows are checked.")
+            self._notify_drawer.info("No Selection", "No rows are selected.")
             return
         if not self.api_client.is_online:
-            QMessageBox.warning(self, "Offline", "Cannot delete records in offline mode.")
+            self._notify_drawer.warning("Offline", "Cannot delete records in offline mode.")
             return
 
-        confirm = QMessageBox.question(
-            self, "Confirm Delete",
-            f"Permanently delete {len(items)} checked record(s)?\n\nThis cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
+        count = len(items)
+        record_labels = [
+            f"[{match['zone']}] {match.get('subname', '') or '@'} {match['type']}"
+            for _, match in items
+        ]
 
-        self._set_busy(True)
+        def _do_delete():
+            self._set_busy(True)
+            self._delete_worker = _DeleteWorker(
+                self.api_client, self.cache_manager, items
+            )
+            self._delete_worker.progress_update.connect(self._on_progress)
+            self._delete_worker.record_done.connect(self._on_record_done)
+            self._delete_worker.change_logged.connect(self._append_log)
+            self._delete_worker.finished.connect(
+                lambda d, f: self._on_operation_done(d, f, "Delete")
+            )
+            self._delete_worker.start()
 
-        self._delete_worker = _DeleteWorker(
-            self.api_client, self.cache_manager, items
+        self._delete_drawer.ask(
+            title="Delete Records",
+            message=f"Permanently delete {count} checked record(s)? This cannot be undone.",
+            items=record_labels,
+            on_confirm=_do_delete,
+            confirm_text=f"Delete {count} Records",
         )
-        self._delete_worker.progress_update.connect(self._on_progress)
-        self._delete_worker.record_done.connect(self._on_record_done)
-        self._delete_worker.change_logged.connect(self._append_log)
-        self._delete_worker.finished.connect(
-            lambda d, f: self._on_operation_done(d, f, "Delete")
-        )
-        self._delete_worker.start()
 
     # ------------------------------------------------------------------
     # Export results
@@ -774,7 +774,7 @@ class SearchReplaceDialog(QtWidgets.QDialog):
                 self._export_csv(path, rows)
             self._status_label.setText(f"Exported {len(rows)} record(s) to {path}")
         except Exception as e:
-            QMessageBox.critical(self, "Export Failed", f"Could not write file:\n{e}")
+            self._notify_drawer.error("Export Failed", f"Could not write file:\n{e}")
 
     def _export_json(self, path, rows):
         data = [
@@ -806,9 +806,9 @@ class SearchReplaceDialog(QtWidgets.QDialog):
     def _all_rows(self):
         result = []
         for row in range(self._table.rowCount()):
-            chk = self._table.item(row, COL_CHECK)
-            if chk:
-                match = chk.data(Qt.ItemDataRole.UserRole)
+            item = self._table.item(row, COL_ZONE)
+            if item:
+                match = item.data(Qt.ItemDataRole.UserRole)
                 if match:
                     result.append(match)
         return result
@@ -841,9 +841,6 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         self._results_label.setText(
             f"{op_name} complete — {summary}. Re-run search to refresh results."
         )
-        self._results_label.setStyleSheet(
-            "color: #4caf50;" if not failed else "color: #ffa726;"
-        )
 
     def _append_log(self, entry):
         self._log_group.setVisible(True)
@@ -857,49 +854,34 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         self._progress_bar.setValue(pct)
         self._status_label.setText(msg)
 
-    def _on_item_changed(self, item):
-        if item.column() == COL_CHECK:
-            self._update_action_btns()
-
     def _select_all(self):
-        self._table.blockSignals(True)
-        for row in range(self._table.rowCount()):
-            chk = self._table.item(row, COL_CHECK)
-            if chk:
-                chk.setCheckState(Qt.CheckState.Checked)
-        self._table.blockSignals(False)
-        self._update_action_btns()
+        self._table.selectAll()
 
     def _select_none(self):
-        self._table.blockSignals(True)
-        for row in range(self._table.rowCount()):
-            chk = self._table.item(row, COL_CHECK)
-            if chk:
-                chk.setCheckState(Qt.CheckState.Unchecked)
-        self._table.blockSignals(False)
-        self._update_action_btns()
+        self._table.clearSelection()
 
     def _checked_items(self):
         result = []
-        for row in range(self._table.rowCount()):
-            chk = self._table.item(row, COL_CHECK)
-            if chk and chk.checkState() == Qt.CheckState.Checked:
-                match = chk.data(Qt.ItemDataRole.UserRole)
+        seen = set()
+        for idx in self._table.selectedIndexes():
+            row = idx.row()
+            if row in seen:
+                continue
+            seen.add(row)
+            item = self._table.item(row, COL_ZONE)
+            if item:
+                match = item.data(Qt.ItemDataRole.UserRole)
                 if match:
                     result.append((row, match))
         return result
 
     def _update_action_btns(self):
-        has_checked = any(
-            self._table.item(row, COL_CHECK) and
-            self._table.item(row, COL_CHECK).checkState() == Qt.CheckState.Checked
-            for row in range(self._table.rowCount())
-        )
+        has_sel   = len(set(idx.row() for idx in self._table.selectedIndexes())) > 0
         is_online = self.api_client.is_online
-        can_act   = has_checked and is_online
+        can_act   = has_sel and is_online
         self._apply_btn.setEnabled(can_act)
         self._delete_btn.setEnabled(can_act)
-        tip = "Cannot modify records while offline." if (has_checked and not is_online) else ""
+        tip = "Cannot modify records while offline." if (has_sel and not is_online) else ""
         self._apply_btn.setToolTip(tip)
         self._delete_btn.setToolTip(tip)
 
@@ -916,9 +898,9 @@ class SearchReplaceDialog(QtWidgets.QDialog):
         if not busy:
             self._update_action_btns()
 
-    def closeEvent(self, event):
+    def hideEvent(self, event):
         for worker in (self._search_worker, self._replace_worker, self._delete_worker):
             if worker and worker.isRunning():
                 worker.quit()
                 worker.wait(2000)
-        super().closeEvent(event)
+        super().hideEvent(event)

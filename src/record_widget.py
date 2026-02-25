@@ -8,9 +8,13 @@ Displays and manages DNS records for a selected zone.
 
 import logging
 import time
-from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QThreadPool
+from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtCore import Qt, Signal, QThread, QThreadPool, QPropertyAnimation, QEasingCurve
+from qfluentwidgets import (PushButton, PrimaryPushButton, SearchLineEdit, TableWidget, TextEdit,
+                             LineEdit, StrongBodyLabel, CaptionLabel, SubtitleLabel,
+                             isDarkTheme)
 
+from confirm_drawer import DeleteConfirmDrawer
 from workers import LoadRecordsWorker
 
 logger = logging.getLogger(__name__)
@@ -18,12 +22,41 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Column index constants
 # ---------------------------------------------------------------------------
-COL_CHECK   = 0
-COL_NAME    = 1
-COL_TYPE    = 2
-COL_TTL     = 3
-COL_CONTENT = 4
-COL_ACTIONS = 5
+COL_NAME    = 0
+COL_TYPE    = 1
+COL_TTL     = 2
+COL_CONTENT = 3
+
+# ---------------------------------------------------------------------------
+# Record type colors  (light_theme, dark_theme)
+# ---------------------------------------------------------------------------
+_TYPE_COLORS = {
+    'A':          ('#1976D2', '#64B5F6'),  # blue
+    'AAAA':       ('#0288D1', '#4FC3F7'),  # light blue
+    'CNAME':      ('#7B1FA2', '#CE93D8'),  # purple
+    'DNAME':      ('#9C27B0', '#BA68C8'),  # lighter purple
+    'MX':         ('#E64A19', '#FF8A65'),  # deep orange
+    'TXT':        ('#2E7D32', '#81C784'),  # green
+    'SPF':        ('#388E3C', '#A5D6A7'),  # lighter green
+    'NS':         ('#0097A7', '#4DD0E1'),  # cyan
+    'SRV':        ('#00838F', '#80DEEA'),  # darker cyan
+    'HTTPS':      ('#00796B', '#80CBC4'),  # teal
+    'SVCB':       ('#00897B', '#4DB6AC'),  # teal
+    'DS':         ('#F57C00', '#FFB74D'),  # orange (DNSSEC)
+    'DNSKEY':     ('#FF8F00', '#FFD54F'),  # amber
+    'CDNSKEY':    ('#FF8F00', '#FFD54F'),
+    'CDS':        ('#FF8F00', '#FFD54F'),
+    'SSHFP':      ('#5E35B1', '#B39DDB'),  # deep purple
+    'TLSA':       ('#C2185B', '#F48FB1'),  # pink
+    'SMIMEA':     ('#AD1457', '#F06292'),  # darker pink
+    'CERT':       ('#D81B60', '#F48FB1'),
+    'OPENPGPKEY': ('#4527A0', '#9575CD'),  # indigo
+    'PTR':        ('#303F9F', '#7986CB'),  # indigo-blue
+    'CAA':        ('#C62828', '#EF9A9A'),  # red
+    'NAPTR':      ('#4E342E', '#A1887F'),  # brown
+    'LOC':        ('#558B2F', '#AED581'),  # light green
+    'SOA':        ('#455A64', '#90A4AE'),  # blue grey
+}
 
 
 # ---------------------------------------------------------------------------
@@ -31,9 +64,9 @@ COL_ACTIONS = 5
 # ---------------------------------------------------------------------------
 
 class _BulkDeleteWorker(QThread):
-    progress_update = pyqtSignal(int, str)   # pct, status message
-    record_done     = pyqtSignal(bool, str)  # success, label
-    finished        = pyqtSignal(int, int)   # deleted, failed
+    progress_update = Signal(int, str)   # pct, status message
+    record_done     = Signal(bool, str)  # success, label
+    finished        = Signal(int, int)   # deleted, failed
 
     def __init__(self, api_client, domain, records):
         super().__init__()
@@ -60,12 +93,449 @@ class _BulkDeleteWorker(QThread):
         self.progress_update.emit(100, "Done.")
         self.finished.emit(deleted, failed)
 
+
+# ---------------------------------------------------------------------------
+# Validation helper (module-level, used by RecordEditPanel)
+# ---------------------------------------------------------------------------
+
+def _validate_record_content(record_type, content):
+    """Validate a single DNS record value. Returns (is_valid, error_message)."""
+    if not content.strip():
+        return False, "Record content cannot be empty"
+    if record_type in ['TXT', 'SPF']:
+        if not (content.startswith('"') and content.endswith('"')):
+            return False, f'{record_type} records must be enclosed in double quotes'
+        if '\"' not in content and content.count('"') > 2:
+            return False, f'Quotes within {record_type} content must be escaped with backslash'
+    elif record_type in ['CNAME', 'MX', 'NS', 'PTR', 'DNAME']:
+        if not content.strip().endswith('.'):
+            return False, f'{record_type} record target must end with a trailing dot'
+        if record_type == 'MX':
+            parts = content.strip().split()
+            if len(parts) < 2:
+                return False, 'MX records must include priority and domain'
+            try:
+                priority = int(parts[0])
+                if not (0 <= priority <= 65535):
+                    return False, 'MX priority must be between 0 and 65535'
+            except ValueError:
+                return False, 'MX priority must be a valid integer'
+    elif record_type == 'A':
+        try:
+            octets = content.strip().split('.')
+            if len(octets) != 4 or any(not (0 <= int(o) <= 255) for o in octets):
+                return False, 'Invalid IPv4 address format'
+        except ValueError:
+            return False, 'Invalid IPv4 address format'
+    elif record_type == 'AAAA':
+        if ':' not in content:
+            return False, 'Invalid IPv6 address format'
+    elif record_type == 'SRV':
+        parts = content.strip().split()
+        if len(parts) < 4:
+            return False, 'SRV record must include priority, weight, port, and target'
+        try:
+            priority, weight, port = map(int, parts[0:3])
+            if not (0 <= priority <= 65535 and 0 <= weight <= 65535 and 0 <= port <= 65535):
+                return False, 'SRV priority, weight, and port must be between 0 and 65535'
+            if not parts[3].endswith('.'):
+                return False, 'SRV target must end with a trailing dot'
+        except ValueError:
+            return False, 'Invalid SRV record format'
+    import re
+    guidance = RecordWidget.RECORD_TYPE_GUIDANCE.get(record_type, {})
+    pattern = guidance.get('validation')
+    if pattern and not re.match(pattern, content.strip()):
+        return False, f'Invalid format for {record_type} record'
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# RecordEditPanel — slide-in right panel for add / edit
+# ---------------------------------------------------------------------------
+
+class RecordEditPanel(QtWidgets.QWidget):
+    """Slide-in right panel for adding and editing DNS records.
+
+    Positioned absolutely as a child overlay of RecordWidget.
+    Slide animation driven by QPropertyAnimation on the pos property.
+    """
+
+    PANEL_WIDTH = 440
+
+    save_done  = Signal()           # emitted after successful API save
+    cancelled  = Signal()           # emitted on Cancel
+    log_signal = Signal(str, str)   # (message, level) forwarded to RecordWidget.log_message
+
+    def __init__(self, api_client, parent=None):
+        super().__init__(parent)
+        self.api_client = api_client
+        self._domain    = None
+        self._record    = None      # None = add mode, dict = edit mode
+        self._animation = None
+        self.setObjectName("recordEditPanel")
+        self.setAutoFillBackground(True)
+        self.setStyleSheet(
+            "QWidget#recordEditPanel {"
+            "  border-left: 1px solid rgba(128,128,128,0.35);"
+            "}"
+        )
+        self.hide()
+        self._setup_ui()
+
+    # ------------------------------------------------------------------
+    # Paint — draw opaque Fluent-themed background so the panel is not
+    # transparent when overlaid on the records table.
+    # ------------------------------------------------------------------
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        bg = QtGui.QColor(32, 32, 32) if isDarkTheme() else QtGui.QColor(243, 243, 243)
+        painter.fillRect(self.rect(), bg)
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
+
+    def _setup_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        # Header row: title + close button
+        header_row = QtWidgets.QHBoxLayout()
+        self._title_label = SubtitleLabel("Add Record")
+        header_row.addWidget(self._title_label, 1)
+        close_btn = PushButton("✕")
+        close_btn.setFixedSize(32, 32)
+        close_btn.setToolTip("Close (Esc)")
+        close_btn.clicked.connect(self.slide_out)
+        header_row.addWidget(close_btn)
+        layout.addLayout(header_row)
+
+        # Escape shortcut
+        esc = QtGui.QShortcut(QtGui.QKeySequence(Qt.Key.Key_Escape), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self.slide_out)
+
+        form = QtWidgets.QFormLayout()
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.DontWrapRows)
+
+        self._subname_input = LineEdit()
+        self._subname_input.setPlaceholderText("e.g., www (leave blank for apex)")
+        form.addRow("Subdomain:", self._subname_input)
+
+        self._type_combo = QtWidgets.QComboBox()
+        _type_labels = {
+            'A': 'A (IPv4 Address)', 'AAAA': 'AAAA (IPv6 Address)',
+            'AFSDB': 'AFSDB (AFS Database)', 'APL': 'APL (Address Prefix List)',
+            'CAA': 'CAA (Certification Authority Authorization)',
+            'CDNSKEY': 'CDNSKEY (Child DNS Key)', 'CERT': 'CERT (Certificate)',
+            'CNAME': 'CNAME (Canonical Name)', 'DHCID': 'DHCID (DHCP Identifier)',
+            'DNAME': 'DNAME (Delegation Name)', 'DNSKEY': 'DNSKEY (DNS Key)',
+            'DLV': 'DLV (DNSSEC Lookaside Validation)', 'DS': 'DS (Delegation Signer)',
+            'EUI48': 'EUI48 (MAC Address)', 'EUI64': 'EUI64 (Extended MAC Address)',
+            'HINFO': 'HINFO (Host Information)', 'HTTPS': 'HTTPS (HTTPS Service)',
+            'KX': 'KX (Key Exchanger)', 'L32': 'L32 (Location IPv4)',
+            'L64': 'L64 (Location IPv6)', 'LOC': 'LOC (Location)',
+            'LP': 'LP (Location Pointer)', 'MX': 'MX (Mail Exchange)',
+            'NAPTR': 'NAPTR (Name Authority Pointer)', 'NID': 'NID (Node Identifier)',
+            'NS': 'NS (Name Server)', 'OPENPGPKEY': 'OPENPGPKEY (OpenPGP Public Key)',
+            'PTR': 'PTR (Pointer)', 'RP': 'RP (Responsible Person)',
+            'SMIMEA': 'SMIMEA (S/MIME Cert Association)',
+            'SPF': 'SPF (Sender Policy Framework)', 'SRV': 'SRV (Service)',
+            'SSHFP': 'SSHFP (SSH Fingerprint)', 'SVCB': 'SVCB (Service Binding)',
+            'TLSA': 'TLSA (TLS Association)', 'TXT': 'TXT (Text)',
+            'URI': 'URI (Uniform Resource Identifier)',
+        }
+        for rtype in sorted(RecordWidget.SUPPORTED_TYPES):
+            self._type_combo.addItem(_type_labels.get(rtype, rtype))
+        self._type_combo.currentIndexChanged.connect(self._update_guidance)
+        form.addRow("Type:", self._type_combo)
+
+        self._ttl_input = QtWidgets.QComboBox()
+        _ttl_values = [
+            (60,    "60 seconds (1 minute)"),
+            (300,   "300 seconds (5 minutes)"),
+            (600,   "600 seconds (10 minutes)"),
+            (900,   "900 seconds (15 minutes)"),
+            (1800,  "1800 seconds (30 minutes)"),
+            (3600,  "3600 seconds (1 hour)"),
+            (7200,  "7200 seconds (2 hours)"),
+            (14400, "14400 seconds (4 hours)"),
+            (86400, "86400 seconds (24 hours)"),
+        ]
+        for i, (value, label) in enumerate(_ttl_values):
+            self._ttl_input.addItem(label)
+            self._ttl_input.setItemData(i, value)
+        self._ttl_input.setCurrentIndex(5)  # default: 3600
+        form.addRow("TTL:", self._ttl_input)
+
+        layout.addLayout(form)
+        layout.addWidget(QtWidgets.QLabel("Record Content:"))
+
+        self._records_input = TextEdit()
+        self._records_input.setPlaceholderText("Enter record content (one per line)")
+        self._records_input.textChanged.connect(self._validate_input)
+        layout.addWidget(self._records_input, 1)
+
+        self._validation_label = QtWidgets.QLabel("")
+        self._validation_label.setWordWrap(True)
+        layout.addWidget(self._validation_label)
+
+        self._guidance_text = QtWidgets.QLabel()
+        self._guidance_text.setWordWrap(True)
+        self._guidance_text.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        layout.addWidget(self._guidance_text)
+
+        self._update_guidance(0)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = PushButton("Cancel")
+        cancel_btn.clicked.connect(self._on_cancel)
+        btn_row.addWidget(cancel_btn)
+        self._done_btn = PrimaryPushButton("Done")
+        self._done_btn.clicked.connect(self._on_done)
+        btn_row.addWidget(self._done_btn)
+        layout.addLayout(btn_row)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def open_for_add(self, domain: str):
+        """Reset form and slide in for adding a new record."""
+        if not domain:
+            return
+        self._domain = domain
+        self._record = None
+        self._title_label.setText("Add Record")
+        self._reset_form()
+        self._subname_input.setEnabled(True)
+        self._type_combo.setEnabled(True)
+        self.slide_in()
+
+    def open_for_edit(self, domain: str, record: dict):
+        """Populate form and slide in for editing an existing record."""
+        self._domain = domain
+        self._record = record
+        self._title_label.setText(f"Edit {record.get('type', 'Record')}")
+        self._reset_form()
+        self._populate(record)
+        self._subname_input.setEnabled(False)
+        self._type_combo.setEnabled(False)
+        self.slide_in()
+
+    # ------------------------------------------------------------------
+    # Animation
+    # ------------------------------------------------------------------
+
+    def slide_in(self):
+        """Animate the panel sliding in from the right edge."""
+        from fluent_styles import container_qss
+        self.setStyleSheet(
+            "QWidget#recordEditPanel { border-left: 1px solid rgba(128,128,128,0.35); }"
+            + container_qss()
+        )
+        parent = self.parent()
+        if parent is None:
+            return
+        pw, ph = parent.width(), parent.height()
+        self.setGeometry(pw, 0, self.PANEL_WIDTH, ph)
+        self.show()
+        self.raise_()
+        self._run_animation(
+            QtCore.QPoint(pw, 0),
+            QtCore.QPoint(pw - self.PANEL_WIDTH, 0),
+            QEasingCurve.Type.OutCubic,
+        )
+
+    def slide_out(self):
+        """Animate the panel sliding back out to the right, then hide."""
+        parent = self.parent()
+        if parent is None:
+            self.hide()
+            return
+        pw = parent.width()
+        anim = self._run_animation(
+            self.pos(),
+            QtCore.QPoint(pw, 0),
+            QEasingCurve.Type.InCubic,
+        )
+        anim.finished.connect(self.hide)
+
+    def _run_animation(self, start, end, easing):
+        if self._animation and self._animation.state() == QPropertyAnimation.State.Running:
+            self._animation.stop()
+        anim = QPropertyAnimation(self, b"pos")
+        anim.setDuration(220)
+        anim.setStartValue(start)
+        anim.setEndValue(end)
+        anim.setEasingCurve(easing)
+        self._animation = anim
+        anim.start()
+        return anim
+
+    def reposition(self, parent_size):
+        """Keep panel flush-right when the parent widget is resized."""
+        if not self.isVisible():
+            return
+        x = parent_size.width() - self.PANEL_WIDTH
+        self.setGeometry(x, 0, self.PANEL_WIDTH, parent_size.height())
+
+    # ------------------------------------------------------------------
+    # Form helpers
+    # ------------------------------------------------------------------
+
+    def _reset_form(self):
+        self._subname_input.clear()
+        self._type_combo.setCurrentIndex(0)
+        self._ttl_input.setCurrentIndex(5)
+        self._records_input.clear()
+        self._validation_label.clear()
+
+    def _populate(self, record):
+        record_type = record.get('type', '')
+        for i in range(self._type_combo.count()):
+            text = self._type_combo.itemText(i)
+            if text.startswith(record_type + ' (') or text == record_type:
+                self._type_combo.setCurrentIndex(i)
+                break
+        self._subname_input.setText(record.get('subname', ''))
+        ttl_value = record.get('ttl', 3600)
+        available = [self._ttl_input.itemData(i) for i in range(self._ttl_input.count())]
+        idx = (
+            available.index(ttl_value)
+            if ttl_value in available
+            else available.index(min(available, key=lambda x: abs(x - ttl_value)))
+        )
+        self._ttl_input.setCurrentIndex(idx)
+        self._records_input.setPlainText('\n'.join(record.get('records', [])))
+
+    def _update_guidance(self, _index=0):
+        record_type = self._type_combo.currentText()
+        if ' (' in record_type:
+            record_type = record_type.split(' (')[0]
+        guidance = RecordWidget.RECORD_TYPE_GUIDANCE.get(record_type, {})
+        if guidance:
+            self._guidance_text.setText(
+                f"<b>{record_type}:</b> {guidance['tooltip']}<br>"
+                f"<b>Format:</b> {guidance['format']}<br>"
+                f"<b>Example:</b> {guidance['example']}"
+            )
+            self._records_input.setPlaceholderText(guidance.get('example', ''))
+        else:
+            self._guidance_text.setText("")
+            self._records_input.setPlaceholderText("")
+        self._validation_label.clear()
+        self._validate_input()
+
+    def _set_status(self, text, level="warning"):
+        """Set the validation label with color-coded text.
+
+        level: 'error' (red), 'warning' (orange), 'success' (green)
+        """
+        colors = {
+            "error":   "#FF6B6B" if isDarkTheme() else "#C62828",
+            "warning": "#FFB74D" if isDarkTheme() else "#E65100",
+            "success": "#81C784" if isDarkTheme() else "#2E7D32",
+        }
+        color = colors.get(level, colors["warning"])
+        self._validation_label.setStyleSheet(f"color: {color};")
+        self._validation_label.setText(text)
+
+    def _validate_input(self):
+        record_type = self._type_combo.currentText()
+        if ' (' in record_type:
+            record_type = record_type.split(' (')[0]
+        content = self._records_input.toPlainText().strip()
+        if not content:
+            self._validation_label.clear()
+            return
+        errors = []
+        for line in [l.strip() for l in content.splitlines() if l.strip()]:
+            ok, msg = _validate_record_content(record_type, line)
+            if not ok:
+                errors.append(msg)
+        if errors:
+            self._set_status("⚠ " + "\n".join(dict.fromkeys(errors)), "warning")
+        else:
+            self._set_status("✓ Valid record format", "success")
+
+    def _on_cancel(self):
+        self.slide_out()
+        self.cancelled.emit()
+
+    def _on_done(self):
+        subname = self._subname_input.text().strip()
+        record_type = self._type_combo.currentText()
+        if ' (' in record_type:
+            record_type = record_type.split(' (')[0]
+        ttl = self._ttl_input.currentData()
+        content = self._records_input.toPlainText().strip()
+        records = [l.strip() for l in content.splitlines() if l.strip()]
+
+        if not records:
+            self._set_status("⚠ Please enter at least one record value.", "warning")
+            return
+
+        for rec in records:
+            ok, msg = _validate_record_content(record_type, rec)
+            if not ok:
+                self._set_status(f"⚠ {msg}", "warning")
+                return
+
+        if record_type in ('TXT', 'SPF'):
+            records = [
+                r if r.startswith('"') and r.endswith('"') else f'"{r}"'
+                for r in records
+            ]
+
+        self._done_btn.setEnabled(False)
+        self._done_btn.setText("Saving…")
+
+        if self._record:
+            success, response = self.api_client.update_record(
+                self._domain, subname, record_type, ttl, records
+            )
+        else:
+            success, response = self.api_client.create_record(
+                self._domain, subname, record_type, ttl, records
+            )
+
+        self._done_btn.setEnabled(True)
+        self._done_btn.setText("Done")
+
+        if success:
+            op = "updated" if self._record else "created"
+            self.log_signal.emit(
+                f"Successfully {op} {record_type} record for '{subname or '@'}' in {self._domain}",
+                "success",
+            )
+            self.slide_out()
+            self.save_done.emit()
+        else:
+            if isinstance(response, dict) and 'message' in response:
+                error_msg = response['message']
+                raw = response.get('raw_response', {})
+                if 'non_field_errors' in raw and isinstance(raw['non_field_errors'], list):
+                    detail = '\n'.join(raw['non_field_errors'])
+                else:
+                    detail = error_msg
+                self.log_signal.emit(f"API Error: {error_msg}\nDetails: {raw}", "error")
+                self._set_status(f"⚠ API error: {detail}", "error")
+            else:
+                self._set_status(f"⚠ Failed: {response}", "error")
+                self.log_signal.emit(f"API Error: {response}", "error")
+
+
 class RecordWidget(QtWidgets.QWidget):
     """Widget for displaying and managing DNS records."""
     
     # Custom signals
-    records_changed = pyqtSignal()  # Emitted when records are changed
-    log_message = pyqtSignal(str, str)  # Emitted to log messages (message, level)
+    records_changed = Signal()  # Emitted when records are changed
+    log_message = Signal(str, str)  # Emitted to log messages (message, level)
     
     # Supported record types
     SUPPORTED_TYPES = [
@@ -303,9 +773,6 @@ class RecordWidget(QtWidgets.QWidget):
             self.show_multiline = self.config_manager.get_show_multiline_records()
         
         self.threadpool = QThreadPool()
-        
-        # Setup UI
-        # Set up the UI
         self.setup_ui()
     
     def setup_ui(self):
@@ -323,14 +790,13 @@ class RecordWidget(QtWidgets.QWidget):
         title_layout = QtWidgets.QHBoxLayout()
         title_layout.setContentsMargins(0, 0, 0, 0)
         
-        title = QtWidgets.QLabel("DNS Records (RRsets)")
-        title.setStyleSheet("font-weight: bold;")
+        title = StrongBodyLabel("DNS Records (RRsets)")
         title.setMinimumWidth(100)  # Fixed width for right alignment
         title_layout.addWidget(title)
-        
+
         title_layout.addStretch()
-        
-        self.records_count_label = QtWidgets.QLabel("Total records: 0")
+
+        self.records_count_label = CaptionLabel("Total records: 0")
         title_layout.addWidget(self.records_count_label)
         
         header_layout.addLayout(title_layout)
@@ -338,13 +804,8 @@ class RecordWidget(QtWidgets.QWidget):
         # Search field (match spacing with Zone widget)
         search_layout = QtWidgets.QHBoxLayout()
         search_layout.setContentsMargins(0, 6, 0, 6)  # Add vertical padding
-        
-        search_label = QtWidgets.QLabel("Search:")
-        search_label.setMinimumWidth(50)  # Fixed width for right alignment
-        search_layout.addWidget(search_label)
-        
-        self.records_search_input = QtWidgets.QLineEdit()
-        self.records_search_input.setFixedHeight(25)  # Consistent height with zone widget
+
+        self.records_search_input = SearchLineEdit()
         self.records_search_input.setPlaceholderText("Type to filter records...")
         self.records_search_input.textChanged.connect(self.filter_records)
         search_layout.addWidget(self.records_search_input)
@@ -355,13 +816,10 @@ class RecordWidget(QtWidgets.QWidget):
         layout.addLayout(header_layout)
         
         # Records table
-        self.records_table = QtWidgets.QTableWidget()
-        self.records_table.setColumnCount(6)  # Check, Name, Type, TTL, Content, Actions
+        self.records_table = TableWidget()
+        self.records_table.setColumnCount(4)  # Name, Type, TTL, Content
 
         # Create header items
-        check_header = QtWidgets.QTableWidgetItem("")
-        check_header.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-
         name_header = QtWidgets.QTableWidgetItem("Name ↕")
         name_header.setToolTip("Click to sort by name")
         name_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -378,35 +836,28 @@ class RecordWidget(QtWidgets.QWidget):
         content_header.setToolTip("Click to sort by content")
         content_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        actions_header = QtWidgets.QTableWidgetItem("Actions")
-        actions_header.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self.records_table.setHorizontalHeaderItem(COL_CHECK,   check_header)
         self.records_table.setHorizontalHeaderItem(COL_NAME,    name_header)
         self.records_table.setHorizontalHeaderItem(COL_TYPE,    type_header)
         self.records_table.setHorizontalHeaderItem(COL_TTL,     ttl_header)
         self.records_table.setHorizontalHeaderItem(COL_CONTENT, content_header)
-        self.records_table.setHorizontalHeaderItem(COL_ACTIONS, actions_header)
         
         # Set table properties
         self.records_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        self.records_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.records_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         self.records_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.records_table.setAlternatingRowColors(True)
         # Column resize modes
-        self.records_table.horizontalHeader().setSectionResizeMode(COL_CHECK,   QtWidgets.QHeaderView.ResizeMode.Fixed)
         self.records_table.horizontalHeader().setSectionResizeMode(COL_NAME,    QtWidgets.QHeaderView.ResizeMode.Interactive)
         self.records_table.horizontalHeader().setSectionResizeMode(COL_TYPE,    QtWidgets.QHeaderView.ResizeMode.Interactive)
         self.records_table.horizontalHeader().setSectionResizeMode(COL_TTL,     QtWidgets.QHeaderView.ResizeMode.Interactive)
         self.records_table.horizontalHeader().setSectionResizeMode(COL_CONTENT, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.records_table.horizontalHeader().setSectionResizeMode(COL_ACTIONS, QtWidgets.QHeaderView.ResizeMode.Interactive)
 
         # Set initial default widths (matched to typical column proportions)
-        self.records_table.setColumnWidth(COL_CHECK,   28)
-        self.records_table.setColumnWidth(COL_NAME,    220)
-        self.records_table.setColumnWidth(COL_TYPE,    90)
+        self.records_table.horizontalHeader().setMinimumSectionSize(60)
+        self.records_table.setColumnWidth(COL_NAME,    180)
+        self.records_table.setColumnWidth(COL_TYPE,    117)
         self.records_table.setColumnWidth(COL_TTL,     80)
-        self.records_table.setColumnWidth(COL_ACTIONS, 140)
         self.records_table.verticalHeader().setVisible(False)
 
         # Enhance sort indicator visibility
@@ -417,11 +868,7 @@ class RecordWidget(QtWidgets.QWidget):
         self.records_table.setSortingEnabled(True)
         self.records_table.sortByColumn(COL_NAME, QtCore.Qt.SortOrder.AscendingOrder)
         self.records_table.cellDoubleClicked.connect(self.handle_cell_double_clicked)
-        
-        # Set table style to match zone list
-        self.records_table.setStyleSheet(
-            "QTableWidget { border: 1px solid palette(mid); }"
-        )
+        self.records_table.itemSelectionChanged.connect(self._update_bulk_btn)
         
         # Set the table to take all available space
         self.records_table.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
@@ -439,10 +886,10 @@ class RecordWidget(QtWidgets.QWidget):
         actions_layout.setContentsMargins(0, 6, 0, 6)  # Add spacing for visual separation
         
         # Add record button
-        self.add_record_btn = QtWidgets.QPushButton("Add Record")
-        self.add_record_btn.setFixedHeight(25)
-        self.add_record_btn.setFixedWidth(90)
-        self.add_record_btn.clicked.connect(self.show_add_record_dialog)
+        self.add_record_btn = PushButton("Add Record")
+        self.add_record_btn.clicked.connect(
+            lambda: self.edit_panel.open_for_add(self.current_domain)
+        )
         self.add_record_btn.setEnabled(self.is_online)
         if not self.is_online:
             self.add_record_btn.setToolTip("Unavailable in offline mode")
@@ -450,26 +897,30 @@ class RecordWidget(QtWidgets.QWidget):
         
         actions_layout.addStretch()
 
-        self.select_all_btn = QtWidgets.QPushButton("Select All")
-        self.select_all_btn.setFixedHeight(25)
+        self.select_all_btn = PushButton("Select All")
         self.select_all_btn.setEnabled(False)
         self.select_all_btn.clicked.connect(self._select_all_records)
         actions_layout.addWidget(self.select_all_btn)
 
-        self.select_none_btn = QtWidgets.QPushButton("Select None")
-        self.select_none_btn.setFixedHeight(25)
+        self.select_none_btn = PushButton("Select None")
         self.select_none_btn.setEnabled(False)
         self.select_none_btn.clicked.connect(self._select_none_records)
         actions_layout.addWidget(self.select_none_btn)
 
-        self.bulk_delete_btn = QtWidgets.QPushButton("Delete Selected")
-        self.bulk_delete_btn.setFixedHeight(25)
+        self.bulk_delete_btn = PushButton("Delete Selected")
         self.bulk_delete_btn.setEnabled(False)
-        self.bulk_delete_btn.setStyleSheet("QPushButton { color: #c62828; }")
         self.bulk_delete_btn.clicked.connect(self.delete_selected_records)
         actions_layout.addWidget(self.bulk_delete_btn)
 
         layout.addLayout(actions_layout)
+
+        # Slide-in edit panel (absolutely positioned overlay — not part of the layout)
+        self.edit_panel = RecordEditPanel(self.api_client, parent=self)
+        self.edit_panel.save_done.connect(self._on_record_saved)
+        self.edit_panel.log_signal.connect(self.log_message)
+
+        # Delete confirmation drawer (slides from top)
+        self._delete_drawer = DeleteConfirmDrawer(parent=self)
     
     def set_domain(self, domain_name):
         """
@@ -525,20 +976,6 @@ class RecordWidget(QtWidgets.QWidget):
             else:
                 self.add_record_btn.setToolTip("")
         
-        # Enable/disable per-row edit and delete buttons
-        for row in range(self.records_table.rowCount()):
-            cell = self.records_table.cellWidget(row, COL_ACTIONS)
-            if not cell or not cell.layout():
-                continue
-            edit_btn = cell.layout().itemAt(0).widget()
-            if edit_btn:
-                edit_btn.setEnabled(self.can_edit)
-                edit_btn.setToolTip("" if self.can_edit else "Editing records is disabled in offline mode")
-            delete_btn = cell.layout().itemAt(1).widget()
-            if delete_btn:
-                delete_btn.setEnabled(self.can_edit)
-                delete_btn.setToolTip("" if self.can_edit else "Deleting records is disabled in offline mode")
-
         # Enable/disable bulk action buttons
         if hasattr(self, 'select_all_btn'):
             has_rows = self.records_table.rowCount() > 0
@@ -660,16 +1097,6 @@ class RecordWidget(QtWidgets.QWidget):
         for row, record in enumerate(filtered_records):
             self.records_table.insertRow(row)
 
-            # Checkbox column — native centered QCheckBox via cell widget
-            check_container = QtWidgets.QWidget()
-            check_layout = QtWidgets.QHBoxLayout(check_container)
-            check_layout.setContentsMargins(0, 0, 0, 0)
-            check_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cb = QtWidgets.QCheckBox()
-            cb.stateChanged.connect(self._on_checkbox_state_changed)
-            check_layout.addWidget(cb)
-            self.records_table.setCellWidget(row, COL_CHECK, check_container)
-
             # Name column (subname)
             name = record.get('subname', '') or '@'
             name_item = QtWidgets.QTableWidgetItem(name)
@@ -682,18 +1109,10 @@ class RecordWidget(QtWidgets.QWidget):
             # Type column
             record_type = record.get('type', '')
             type_item = QtWidgets.QTableWidgetItem(record_type)
-            if record_type == 'A':
-                type_item.setForeground(QtGui.QColor('#2196F3'))
-            elif record_type == 'AAAA':
-                type_item.setForeground(QtGui.QColor('#3F51B5'))
-            elif record_type in ['CNAME', 'DNAME']:
-                type_item.setForeground(QtGui.QColor('#4CAF50'))
-            elif record_type == 'MX':
-                type_item.setForeground(QtGui.QColor('#FF9800'))
-            elif record_type in ['TXT', 'SPF']:
-                type_item.setForeground(QtGui.QColor('#673AB7'))
-            elif record_type in ['NS', 'DS', 'DNSKEY']:
-                type_item.setForeground(QtGui.QColor('#E91E63'))
+            type_item.setFont(QtGui.QFont(self.font().family(), -1, QtGui.QFont.Weight.Medium))
+            if record_type in _TYPE_COLORS:
+                light_c, dark_c = _TYPE_COLORS[record_type]
+                type_item.setForeground(QtGui.QColor(dark_c if isDarkTheme() else light_c))
             if timestamp_tooltip:
                 type_item.setToolTip(timestamp_tooltip)
             self.records_table.setItem(row, COL_TYPE, type_item)
@@ -712,32 +1131,6 @@ class RecordWidget(QtWidgets.QWidget):
                 content_item.setToolTip(timestamp_tooltip)
             self.records_table.setItem(row, COL_CONTENT, content_item)
 
-            # Actions column
-            actions_widget = QtWidgets.QWidget()
-            actions_layout = QtWidgets.QHBoxLayout(actions_widget)
-            actions_layout.setContentsMargins(4, 0, 4, 0)
-            actions_layout.setSpacing(4)
-
-            record_ref = record
-            edit_btn = QtWidgets.QPushButton("Edit")
-            edit_btn.setFixedSize(60, 25)
-            edit_btn.clicked.connect(lambda _, rec=record_ref: self.edit_record_by_ref(rec))
-            edit_btn.setProperty('record_ref', record_ref)
-            edit_btn.setEnabled(self.can_edit)
-            edit_btn.setToolTip("" if self.can_edit else "Editing records is disabled in offline mode")
-
-            delete_btn = QtWidgets.QPushButton("Delete")
-            delete_btn.setFixedSize(60, 25)
-            delete_btn.clicked.connect(lambda _, rec=record_ref: self.delete_record_by_ref(rec))
-            delete_btn.setProperty('record_ref', record_ref)
-            delete_btn.setEnabled(self.can_edit)
-            delete_btn.setToolTip("" if self.can_edit else "Deleting records is disabled in offline mode")
-
-            actions_layout.addWidget(edit_btn)
-            actions_layout.addWidget(delete_btn)
-            actions_layout.addStretch()
-
-            self.records_table.setCellWidget(row, COL_ACTIONS, actions_widget)
 
         self._update_bulk_btn()
 
@@ -810,18 +1203,6 @@ class RecordWidget(QtWidgets.QWidget):
     
 
 
-    def show_add_record_dialog(self):
-        """Show dialog to add a new record."""
-        if not self.current_domain or not self.can_edit:
-            return
-            
-        dialog = RecordDialog(self.current_domain, self.api_client, parent=self)
-        dialog.setWindowTitle("Add DNS Record")
-        
-        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.records_changed.emit()
-            self.refresh_records()
-    
     def sort_records_table(self, column, order):
         """Sort the records table based on column clicked.
         
@@ -839,7 +1220,6 @@ class RecordWidget(QtWidgets.QWidget):
                 COL_TYPE:    "Type",
                 COL_TTL:     "TTL",
                 COL_CONTENT: "Content",
-                COL_ACTIONS: "Actions",
             }
             for col, label in header_items.items():
                 item = self.records_table.horizontalHeaderItem(col)
@@ -848,162 +1228,97 @@ class RecordWidget(QtWidgets.QWidget):
                 if col == column:
                     arrow = "↑" if order == Qt.SortOrder.AscendingOrder else "↓"
                     item.setText(f"{label} {arrow}")
-                elif col != COL_ACTIONS:
-                    item.setText(f"{label} ↕")
                 else:
-                    item.setText(label)
+                    item.setText(f"{label} ↕")
     
     def handle_cell_double_clicked(self, row, column):
-        """Handle double-click on a cell."""
+        """Handle double-click on a cell — opens the edit panel."""
         if not self.can_edit:
             return
-        # Ignore double-click on the checkbox and Actions columns
-        if column not in (COL_CHECK, COL_ACTIONS):
-            record_item = self.records_table.item(row, COL_NAME)
-            record = record_item.data(Qt.ItemDataRole.UserRole)
-            if record:
-                self.edit_record_by_ref(record)
+        record_item = self.records_table.item(row, COL_NAME)
+        if record_item is None:
+            return
+        record = record_item.data(Qt.ItemDataRole.UserRole)
+        if record:
+            self.edit_record_by_ref(record)
     
     def edit_record_by_ref(self, record):
-        """Edit a record by reference instead of by row index.
-        
-        Args:
-            record (dict): The record object to edit
-        """
         if not self.can_edit or not record:
             return
-            
-        dialog = RecordDialog(self.current_domain, self.api_client, record=record, parent=self)
-        dialog.setWindowTitle("Edit DNS Record")
-        
-        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.records_changed.emit()
-            self.refresh_records()
+        self.edit_panel.open_for_edit(self.current_domain, record)
     
     def edit_record(self, row):
-        """
-        Edit a record.
-        
-        Args:
-            row (int): Row index in the table
-        """
         if not self.can_edit:
             return
-            
         record_item = self.records_table.item(row, COL_NAME)
         record = record_item.data(Qt.ItemDataRole.UserRole)
-
         if not record:
             return
-
-        dialog = RecordDialog(self.current_domain, self.api_client, record=record, parent=self)
-        dialog.setWindowTitle("Edit DNS Record")
-
-        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.records_changed.emit()
-            self.refresh_records()
+        self.edit_panel.open_for_edit(self.current_domain, record)
 
     def delete_selected_record(self):
-        """Delete the currently selected record in the table.
+        """Delete the currently selected record(s) in the table.
         Called when pressing the Delete key while the records table has focus.
         """
         if not hasattr(self, 'records_table') or not self.can_edit:
             return
-        
-        # Get the currently selected row
-        selected_rows = self.records_table.selectedIndexes()
-        if not selected_rows:
+
+        # Collect unique rows from the selection
+        selected_indexes = self.records_table.selectedIndexes()
+        if not selected_indexes:
             return
-        
-        # Get the row of the first selected cell
-        row = selected_rows[0].row()
-        if row < 0 or row >= self.records_table.rowCount():
+
+        seen_rows = set()
+        records_to_delete = []
+        for index in selected_indexes:
+            row = index.row()
+            if row in seen_rows:
+                continue
+            seen_rows.add(row)
+            name_item = self.records_table.item(row, COL_NAME)
+            if name_item is None:
+                continue
+            record = name_item.data(Qt.ItemDataRole.UserRole)
+            if record:
+                records_to_delete.append(record)
+
+        if not records_to_delete:
+            self.log_message.emit("No record found for deletion", "warning")
             return
-        
-        # Get the record reference from the delete button in the actions column
-        try:
-            actions_cell = self.records_table.cellWidget(row, COL_ACTIONS)
-            if not actions_cell or not actions_cell.layout():
-                self.log_message.emit("Could not access actions cell for deletion", "warning")
-                return
-            
-            # Get the delete button (second button in the layout)
-            if actions_cell.layout().count() > 1:
-                delete_btn = actions_cell.layout().itemAt(1).widget()
-                if delete_btn and delete_btn.property('record_ref'):
-                    record = delete_btn.property('record_ref')
-                    if record:
-                        self.delete_record_by_ref(record)
-                        return
-                    
-            # Fallback: try to get the reference from any buttons in the layout
-            for i in range(actions_cell.layout().count()):
-                item = actions_cell.layout().itemAt(i)
-                if item and item.widget() and hasattr(item.widget(), 'property'):
-                    btn = item.widget()
-                    record = btn.property('record_ref')
-                    if record:
-                        self.delete_record_by_ref(record)
-                        return
-                        
-            self.log_message.emit("No record reference found for deletion", "warning")
-            
-        except Exception as e:
-            self.log_message.emit(f"Error accessing record for deletion: {str(e)}", "error")
+
+        if len(records_to_delete) == 1:
+            self.delete_record_by_ref(records_to_delete[0])
+        else:
+            # Multiple rows selected: use bulk delete flow
+            count = len(records_to_delete)
+            items = [
+                f"{r.get('subname') or '@'} {r.get('type', '')}"
+                for r in records_to_delete
+            ]
+
+            def _do_bulk_delete():
+                self._set_bulk_busy(True)
+                self._bulk_worker = _BulkDeleteWorker(self.api_client, self.current_domain, records_to_delete)
+                self._bulk_worker.record_done.connect(self._on_bulk_record_done)
+                self._bulk_worker.finished.connect(self._on_bulk_delete_finished)
+                self._bulk_worker.start()
+
+            self._delete_drawer.ask(
+                title="Delete Records",
+                message=f"Permanently delete {count} selected record(s)? This cannot be undone.",
+                items=items,
+                on_confirm=_do_bulk_delete,
+                confirm_text=f"Delete {count} Records",
+            )
     
     # ------------------------------------------------------------------
     # Bulk selection and delete
     # ------------------------------------------------------------------
 
-    def _on_checkbox_state_changed(self):
-        """Called when any row's QCheckBox changes state."""
-        sender = self.sender()
-        for row in range(self.records_table.rowCount()):
-            widget = self.records_table.cellWidget(row, COL_CHECK)
-            if widget:
-                cb = widget.findChild(QtWidgets.QCheckBox)
-                if cb is sender:
-                    self._update_row_highlight(row, cb.isChecked())
-                    break
-        self._update_bulk_btn()
-
-    def _row_highlight_color(self):
-        """Return a soft highlight QColor derived from the current palette."""
-        palette = self.records_table.palette()
-        hl = palette.color(QtGui.QPalette.ColorRole.Highlight)
-        base = palette.color(QtGui.QPalette.ColorRole.Base)
-        # Blend: 25% highlight + 75% base — works for any theme
-        return QtGui.QColor(
-            int(hl.red()   * 0.25 + base.red()   * 0.75),
-            int(hl.green() * 0.25 + base.green() * 0.75),
-            int(hl.blue()  * 0.25 + base.blue()  * 0.75),
-        )
-
-    def _update_row_highlight(self, row, checked):
-        """Highlight or clear a row depending on its checked state."""
-        widget = self.records_table.cellWidget(row, COL_CHECK)
-        if checked:
-            bg_color = self._row_highlight_color()
-            bg_hex = bg_color.name()
-            if widget:
-                widget.setStyleSheet(f"background-color: {bg_hex};")
-            for col in (COL_NAME, COL_TYPE, COL_TTL, COL_CONTENT):
-                item = self.records_table.item(row, col)
-                if item:
-                    item.setBackground(bg_color)
-        else:
-            if widget:
-                widget.setStyleSheet("")
-            for col in (COL_NAME, COL_TYPE, COL_TTL, COL_CONTENT):
-                item = self.records_table.item(row, col)
-                if item:
-                    # Remove the role so Qt restores alternating-row colours
-                    item.setData(Qt.ItemDataRole.BackgroundRole, None)
-
     def _update_bulk_btn(self):
         if not hasattr(self, 'bulk_delete_btn'):
             return
-        n = len(self._get_checked_records())
+        n = len(set(idx.row() for idx in self.records_table.selectedIndexes()))
         can = n > 0 and self.can_edit
         self.bulk_delete_btn.setEnabled(can)
         self.bulk_delete_btn.setText(f"Delete Selected ({n})" if n > 0 else "Delete Selected")
@@ -1012,60 +1327,48 @@ class RecordWidget(QtWidgets.QWidget):
         self.select_none_btn.setEnabled(has_rows and self.can_edit)
 
     def _select_all_records(self):
-        for row in range(self.records_table.rowCount()):
-            widget = self.records_table.cellWidget(row, COL_CHECK)
-            if widget:
-                cb = widget.findChild(QtWidgets.QCheckBox)
-                if cb:
-                    cb.blockSignals(True)
-                    cb.setChecked(True)
-                    cb.blockSignals(False)
-                    self._update_row_highlight(row, True)
-        self._update_bulk_btn()
+        self.records_table.selectAll()
 
     def _select_none_records(self):
-        for row in range(self.records_table.rowCount()):
-            widget = self.records_table.cellWidget(row, COL_CHECK)
-            if widget:
-                cb = widget.findChild(QtWidgets.QCheckBox)
-                if cb:
-                    cb.blockSignals(True)
-                    cb.setChecked(False)
-                    cb.blockSignals(False)
-                    self._update_row_highlight(row, False)
-        self._update_bulk_btn()
-
-    def _get_checked_records(self):
-        result = []
-        for row in range(self.records_table.rowCount()):
-            widget = self.records_table.cellWidget(row, COL_CHECK)
-            if widget:
-                cb = widget.findChild(QtWidgets.QCheckBox)
-                if cb and cb.isChecked():
-                    name_item = self.records_table.item(row, COL_NAME)
-                    if name_item:
-                        record = name_item.data(Qt.ItemDataRole.UserRole)
-                        if record:
-                            result.append(record)
-        return result
+        self.records_table.clearSelection()
 
     def delete_selected_records(self):
-        records = self._get_checked_records()
-        if not records or not self.can_edit:
+        if not self.can_edit:
             return
-        confirm = QtWidgets.QMessageBox.question(
-            self, "Confirm Bulk Delete",
-            f"Permanently delete {len(records)} selected record(s)?\n\nThis cannot be undone.",
-            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-            QtWidgets.QMessageBox.StandardButton.No,
+        seen_rows = set()
+        records = []
+        for idx in self.records_table.selectedIndexes():
+            row = idx.row()
+            if row in seen_rows:
+                continue
+            seen_rows.add(row)
+            name_item = self.records_table.item(row, COL_NAME)
+            if name_item:
+                rec = name_item.data(Qt.ItemDataRole.UserRole)
+                if rec:
+                    records.append(rec)
+        if not records:
+            return
+        count = len(records)
+        items = [
+            f"{r.get('subname') or '@'} {r.get('type', '')}"
+            for r in records
+        ]
+
+        def _do_bulk_delete():
+            self._set_bulk_busy(True)
+            self._bulk_worker = _BulkDeleteWorker(self.api_client, self.current_domain, records)
+            self._bulk_worker.record_done.connect(self._on_bulk_record_done)
+            self._bulk_worker.finished.connect(self._on_bulk_delete_finished)
+            self._bulk_worker.start()
+
+        self._delete_drawer.ask(
+            title="Delete Records",
+            message=f"Permanently delete {count} selected record(s)? This cannot be undone.",
+            items=items,
+            on_confirm=_do_bulk_delete,
+            confirm_text=f"Delete {count} Records",
         )
-        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
-            return
-        self._set_bulk_busy(True)
-        self._bulk_worker = _BulkDeleteWorker(self.api_client, self.current_domain, records)
-        self._bulk_worker.record_done.connect(self._on_bulk_record_done)
-        self._bulk_worker.finished.connect(self._on_bulk_delete_finished)
-        self._bulk_worker.start()
 
     def _set_bulk_busy(self, busy):
         self.bulk_delete_btn.setEnabled(not busy)
@@ -1101,598 +1404,42 @@ class RecordWidget(QtWidgets.QWidget):
         subname = record.get('subname', '')
         type = record.get('type', '')
         
-        # Confirm deletion
         record_name = subname or '@'
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Deletion",
-            f"Are you sure you want to delete the {type} record for '{record_name}'?",
-            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-            QtWidgets.QMessageBox.StandardButton.No
+
+        def _do_delete():
+            record_content = "\n".join(record.get('records', ['<empty>']))
+            ttl = record.get('ttl', 0)
+            self.log_message.emit(
+                f"Deleting {type} record for '{record_name}' with TTL: {ttl}, content: {record_content}", "info"
+            )
+            success, response = self.api_client.delete_record(self.current_domain, subname, type)
+            if success:
+                self.log_message.emit(
+                    f"Successfully deleted {type} record for '{record_name}' with TTL: {ttl}", "success"
+                )
+                self.cache_manager.clear_domain_cache(self.current_domain)
+                self.records_changed.emit()
+                self.refresh_records()
+            else:
+                self.log_message.emit(f"Failed to delete record: {response}", "error")
+
+        self._delete_drawer.ask(
+            title="Delete Record",
+            message=f"Delete the {type} record for '{record_name}'?",
+            on_confirm=_do_delete,
+            confirm_text="Delete Record",
         )
-        
-        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
-            return
-            
-        # Get record content for detailed logging
-        record_content = "\n".join(record.get('records', ['<empty>']))
-        
-        # Delete record with detailed logging
-        ttl = record.get('ttl', 0)  # Include TTL in log
-        self.log_message.emit(f"Deleting {type} record for '{record_name}' with TTL: {ttl}, content: {record_content}", "info")
-        
-        success, response = self.api_client.delete_record(self.current_domain, subname, type)
-        
-        if success:
-            self.log_message.emit(f"Successfully deleted {type} record for '{record_name}' with TTL: {ttl}", "success")
-            # Force invalidation of the cache for this domain
+
+    def _on_record_saved(self):
+        """Called when RecordEditPanel reports a successful save."""
+        if self.current_domain:
             self.cache_manager.clear_domain_cache(self.current_domain)
-            # Emit signal first (for any listeners)
-            self.records_changed.emit()
-            # Then refresh our own view
-            self.refresh_records()
-        else:
-            self.log_message.emit(f"Failed to delete record: {response}", "error")
+        self.records_changed.emit()
+        self.refresh_records()
 
-
-class RecordDialog(QtWidgets.QDialog):
-    """Dialog for adding or editing DNS records."""
-    
-    # Create a signal for logging messages
-    log_signal = QtCore.pyqtSignal(str, str)
-    
-    def __init__(self, domain, api_client, record=None, parent=None):
-        """
-        Initialize the record dialog.
-        
-        Args:
-            domain (str): Domain name
-            api_client: API client instance
-            record (dict, optional): Existing record for editing
-            parent: Parent widget, if any
-        """
-        super(RecordDialog, self).__init__(parent)
-        
-        self.domain = domain
-        self.api_client = api_client
-        self.record = record  # None for new record, dict for editing
-        self.parent = parent
-        
-        # Connect our log_signal to the parent's log_message signal if available
-        if parent and hasattr(parent, 'log_message'):
-            self.log_signal.connect(parent.log_message)
-        
-        # Set up the UI
-        self.setup_ui()
-        
-        # Initialize values from record if editing
-        if record:
-            self.initialize_values()
-    
-    def setup_ui(self):
-        """Set up the user interface."""
-        self.setWindowTitle("DNS Record Editor")
-        self.setMinimumSize(560, 640)
-        layout = QtWidgets.QVBoxLayout(self)
-        
-        # Form layout
-        form = QtWidgets.QFormLayout()
-        
-        # Subdomain field
-        self.subname_input = QtWidgets.QLineEdit()
-        self.subname_input.setPlaceholderText("e.g., www (leave blank for apex)")
-        form.addRow("Subdomain:", self.subname_input)
-        
-        # Type field
-        self.type_combo = QtWidgets.QComboBox()
-        # Sort the record types alphabetically for easier finding
-        record_type_descriptions = {
-            'A': 'A (IPv4 Address)',
-            'AAAA': 'AAAA (IPv6 Address)',
-            'AFSDB': 'AFSDB (AFS Database)',
-            'APL': 'APL (Address Prefix List)',
-            'CAA': 'CAA (Certification Authority Authorization)',
-            'CDNSKEY': 'CDNSKEY (Child DNS Key)',
-            'CERT': 'CERT (Certificate)',
-            'CNAME': 'CNAME (Canonical Name)',
-            'DHCID': 'DHCID (DHCP Identifier)',
-            'DNAME': 'DNAME (Delegation Name)',
-            'DNSKEY': 'DNSKEY (DNS Key)',
-            'DLV': 'DLV (DNSSEC Lookaside Validation)',
-            'DS': 'DS (Delegation Signer)',
-            'EUI48': 'EUI48 (MAC Address)',
-            'EUI64': 'EUI64 (Extended MAC Address)',
-            'HINFO': 'HINFO (Host Information)',
-            'HTTPS': 'HTTPS (HTTPS Service)',
-            'KX': 'KX (Key Exchanger)',
-            'L32': 'L32 (Location IPv4)',
-            'L64': 'L64 (Location IPv6)',
-            'LOC': 'LOC (Location)',
-            'LP': 'LP (Location Pointer)',
-            'MX': 'MX (Mail Exchange)',
-            'NAPTR': 'NAPTR (Name Authority Pointer)',
-            'NID': 'NID (Node Identifier)',
-            'NS': 'NS (Name Server)',
-            'OPENPGPKEY': 'OPENPGPKEY (OpenPGP Public Key)',
-            'PTR': 'PTR (Pointer)',
-            'RP': 'RP (Responsible Person)',
-            'SMIMEA': 'SMIMEA (S/MIME Cert Association)',
-            'SPF': 'SPF (Sender Policy Framework)',
-            'SRV': 'SRV (Service)',
-            'SSHFP': 'SSHFP (SSH Fingerprint)',
-            'SVCB': 'SVCB (Service Binding)',
-            'TLSA': 'TLSA (TLS Association)',
-            'TXT': 'TXT (Text)',
-            'URI': 'URI (Uniform Resource Identifier)'
-        }
-        for record_type in sorted(RecordWidget.SUPPORTED_TYPES):
-            self.type_combo.addItem(record_type_descriptions.get(record_type, record_type))
-        self.type_combo.currentIndexChanged.connect(self.update_record_type_guidance)
-        form.addRow("Type:", self.type_combo)
-        
-        # TTL field - replace spinbox with combo box of common values
-        self.ttl_input = QtWidgets.QComboBox()
-        
-        # Add common TTL values with human-readable labels
-        ttl_values = [
-            (60, "60 seconds (1 minute)"),
-            (300, "300 seconds (5 minutes)"),
-            (600, "600 seconds (10 minutes)"),
-            (900, "900 seconds (15 minutes)"),
-            (1800, "1800 seconds (30 minutes)"),
-            (3600, "3600 seconds (1 hour)"),
-            (7200, "7200 seconds (2 hours)"),
-            (14400, "14400 seconds (4 hours)"),
-            (86400, "86400 seconds (24 hours)")
-            # 604800 removed - deSEC only supports up to 86400 (24 hours)
-        ]
-        
-        for value, label in ttl_values:
-            self.ttl_input.addItem(label, value)
-            
-        # Set default to 1 hour
-        self.ttl_input.setCurrentIndex(5)  # 3600 seconds (1 hour)
-        
-        # Create a layout with the dropdown and a note for low TTL values
-        ttl_layout = QtWidgets.QVBoxLayout()
-        ttl_layout.setContentsMargins(0, 0, 0, 0)
-        ttl_layout.addWidget(self.ttl_input)
-        
-        ttl_note = QtWidgets.QLabel("Note: deSEC supports TTL values between 3600-86400 seconds (1-24 hours).\nTTL below 3600 (1 hour) is possible but requires account modification via support@desec.io.")
-        ttl_note.setStyleSheet("color: #666; font-size: 10px;")
-        ttl_note.setWordWrap(True)
-        ttl_layout.addWidget(ttl_note)
-        
-        ttl_container = QtWidgets.QWidget()
-        ttl_container.setLayout(ttl_layout)
-        form.addRow("TTL:", ttl_container)
-        
-        # Records field
-        self.records_label = QtWidgets.QLabel("Record Content:")
-        layout.addLayout(form)
-        layout.addWidget(self.records_label)
-        
-        self.records_input = QtWidgets.QTextEdit()
-        self.records_input.setPlaceholderText("Enter record content (one per line)")
-        self.records_input.textChanged.connect(self.validate_input)
-        layout.addWidget(self.records_input)
-        
-        # Validation status indicator
-        self.validation_status = QtWidgets.QLabel("")
-        self.validation_status.setStyleSheet("color: #666;")
-        self.validation_status.setWordWrap(True)
-        layout.addWidget(self.validation_status)
-        
-        # Guidance text
-        self.guidance_text = QtWidgets.QLabel()
-        self.guidance_text.setWordWrap(True)
-        # Use palette colors instead of hardcoded colors for theme compatibility
-        self.guidance_text.setAutoFillBackground(True)
-        # We'll set the actual styling in update_record_type_guidance for theme awareness
-        self.guidance_text.setTextFormat(QtCore.Qt.TextFormat.RichText)
-        layout.addWidget(self.guidance_text)
-        
-        # Initialize guidance for the default record type
-        self.update_record_type_guidance(0)
-        
-        # Add buttons
-        button_box = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
-    
-    def initialize_values(self):
-        """Initialize form values from record if editing."""
-        if not self.record:
-            return
-            
-        # Disable changing the record type and subname when editing
-        record_type = self.record.get('type', '')
-        
-        # Find the matching record type in the dropdown (which now has descriptions)
-        for i in range(self.type_combo.count()):
-            current_type = self.type_combo.itemText(i)
-            # Check if this dropdown item starts with our record type
-            if current_type.startswith(record_type + ' (') or current_type == record_type:
-                self.type_combo.setCurrentIndex(i)
-                break
-        
-        self.type_combo.setEnabled(False)
-        
-        self.subname_input.setText(self.record.get('subname', ''))
-        self.subname_input.setEnabled(False)
-        
-        # Find and select the matching TTL value in the dropdown
-        ttl_value = self.record.get('ttl', 3600)
-        index = self.ttl_input.findData(ttl_value)
-        
-        # If exact match not found, find closest value
-        if index == -1:
-            # Get all available TTL values
-            available_ttls = [self.ttl_input.itemData(i) for i in range(self.ttl_input.count())]
-            # Find closest match by minimizing absolute difference
-            closest_ttl = min(available_ttls, key=lambda x: abs(x - ttl_value))
-            index = self.ttl_input.findData(closest_ttl)
-            
-        self.ttl_input.setCurrentIndex(max(0, index))
-        
-        # Set window title to indicate edit mode
-        # Always use the original record type (without description) from the record data
-        self.setWindowTitle(f"Edit {self.record.get('type', '')} Record")
-        
-        # Set record content
-        records = self.record.get('records', [])
-        self.records_input.setPlainText('\n'.join(records))
-    
-    def update_record_type_guidance(self, index):
-        """Update guidance text based on selected record type."""
-        record_type = self.type_combo.currentText()
-        
-        # Extract just the record type without description
-        if ' (' in record_type:
-            record_type = record_type.split(' (')[0]
-            
-        if record_type in RecordWidget.RECORD_TYPE_GUIDANCE:
-            guidance = RecordWidget.RECORD_TYPE_GUIDANCE[record_type]
-            self.guidance_text.setText(
-                f"<b>{record_type} Record:</b><br>{guidance['tooltip']}<br><br>" +
-                f"<b>Format:</b><br>{guidance['format']}<br><br>" +
-                f"<b>Example:</b><br>{guidance['example']}"
-            )
-            
-            # Use palette colors for theme compatibility
-            palette = self.guidance_text.palette()
-            bg_color = palette.color(QtGui.QPalette.ColorRole.Base)
-            text_color = palette.color(QtGui.QPalette.ColorRole.Text)
-            
-            # Slightly adjust the background color to stand out from the main background
-            # For light themes, make it slightly darker, for dark themes make it slightly lighter
-            luminance = (0.299 * bg_color.red() + 0.587 * bg_color.green() + 0.114 * bg_color.blue()) / 255
-            if luminance > 0.5:  # Light background
-                # Make it slightly darker for contrast
-                bg_color = bg_color.darker(110)
-            else:  # Dark background
-                # Make it slightly lighter for contrast
-                bg_color = bg_color.lighter(120)
-                
-            # Create custom palette for the guidance text
-            guidance_palette = QtGui.QPalette(palette)
-            guidance_palette.setColor(QtGui.QPalette.ColorRole.Window, bg_color)
-            guidance_palette.setColor(QtGui.QPalette.ColorRole.WindowText, text_color)
-            self.guidance_text.setPalette(guidance_palette)
-            
-            # Add padding and border radius with stylesheet
-            self.guidance_text.setStyleSheet(
-                f"padding: 10px; border-radius: 5px; margin-bottom: 10px;"
-            )
-            
-            self.records_input.setPlaceholderText(guidance['example'])
-        else:
-            self.guidance_text.setText("")
-            # Reset to default palette
-            self.guidance_text.setPalette(self.palette())
-            self.guidance_text.setStyleSheet("")
-            self.records_input.setPlaceholderText("")
-        
-        # Clear validation status when record type changes
-        self.validation_status.setText("")
-        self.validation_status.setStyleSheet("color: #666;")
-        
-        # Validate existing content with the new record type
-        self.validate_input()
-    
-    def validate_record_content(self, record_type, content):
-        """Validate record content based on type.
-        
-        Args:
-            record_type (str): Record type
-            content (str): Record content
-            
-        Returns:
-            tuple: (is_valid, error_message)
-        """
-        if not content.strip():
-            return False, "Record content cannot be empty"
-            
-        # Extract just the record type without description
-        if ' (' in record_type:
-            record_type = record_type.split(' (')[0]
-            
-        # Check if we have regex validation defined for this record type
-        validation_pattern = None
-        if record_type in RecordWidget.RECORD_TYPE_GUIDANCE:
-            validation_pattern = RecordWidget.RECORD_TYPE_GUIDANCE[record_type].get('validation')
-        
-        # Specific validations for different record types
-        if record_type in ['TXT', 'SPF']:
-            # TXT records should be enclosed in quotes
-            if not (content.startswith('"') and content.endswith('"')):
-                return False, f"{record_type} records must be enclosed in double quotes (e.g., \"v=spf1 -all\")"
-            # Check for proper escaping of quotes within the content
-            if '\"' not in content and content.count('"') > 2:
-                return False, f"Quotes within {record_type} content must be escaped with backslash (e.g., \"Example with \\\"quoted\\\" text\")"
-                
-        elif record_type in ['CNAME', 'MX', 'NS', 'PTR', 'DNAME']:
-            # Check for trailing dots on domains
-            if not content.strip().endswith('.'):
-                return False, f"{record_type} record target must end with a trailing dot (e.g., example.com.)"
-                
-            # For MX records, check the priority format
-            if record_type == 'MX':
-                parts = content.strip().split()
-                if len(parts) < 2:
-                    return False, "MX records must include priority and domain (e.g., '10 mail.example.com.')"
-                try:
-                    priority = int(parts[0])
-                    if priority < 0 or priority > 65535:
-                        return False, "MX priority must be between 0 and 65535"
-                except ValueError:
-                    return False, "MX priority must be a valid integer"
-            
-        elif record_type == 'A':
-            # Basic IPv4 validation (more comprehensive than regex)
-            try:
-                octets = content.strip().split('.')
-                if len(octets) != 4 or any(not (0 <= int(o) <= 255) for o in octets):
-                    return False, "Invalid IPv4 address format (must be four decimal numbers between 0-255)"
-            except ValueError:
-                return False, "Invalid IPv4 address format"
-            
-        elif record_type == 'AAAA':
-            # Basic IPv6 format check
-            if not ':' in content or len(content.replace(':', '').strip()) < 1:
-                return False, "Invalid IPv6 address format"
-                
-        elif record_type == 'SRV':
-            # Check SRV record format: priority weight port target
-            parts = content.strip().split()
-            if len(parts) < 4:
-                return False, "SRV record must include priority, weight, port, and target (e.g., '0 5 443 example.com.')"
-            try:
-                priority, weight, port = map(int, parts[0:3])
-                if not (0 <= priority <= 65535 and 0 <= weight <= 65535 and 0 <= port <= 65535):
-                    return False, "SRV priority, weight, and port must be between 0 and 65535"
-                if not parts[3].endswith('.'):
-                    return False, "SRV target must end with a trailing dot (e.g., example.com.)"
-            except ValueError:
-                return False, "Invalid SRV record format"
-                
-        # Use regex validation if defined
-        if validation_pattern:
-            import re
-            if not re.match(validation_pattern, content.strip()):
-                return False, f"Invalid format for {record_type} record"
-                
-        return True, ""
-
-    def validate_input(self, content=None):
-        """Validate the record input based on selected record type.
-        
-        Args:
-            content (str, optional): Content to validate. If not provided, uses current input.
-                    
-        Returns:
-            bool: True if valid, False otherwise
-        """
-        record_type = self.type_combo.currentText()
-        
-        # Extract just the record type without description
-        if ' (' in record_type:
-            record_type = record_type.split(' (')[0]
-            
-        content = content if content is not None else self.records_input.toPlainText().strip()
-            
-        # If there's no content, clear validation status
-        if not content.strip():
-            self.validation_status.setText("")
-            self.validation_status.setStyleSheet("color: #666;")
-            return
-            
-        lines = [line.strip() for line in content.split('\n') if line.strip()]
-        all_valid = True
-        errors = []
-            
-        # Validate each line
-        for line in lines:
-            is_valid, message = self.validate_record_content(record_type, line)
-            if not is_valid:
-                all_valid = False
-                errors.append(message)
-        
-        # Update validation status
-        if all_valid:
-            self.validation_status.setText("✓ Valid record format")
-            self.validation_status.setStyleSheet("color: #4caf50;")
-        else:
-            unique_errors = set(errors)  # Remove duplicates
-            self.validation_status.setText("⚠️ " + "\n".join(unique_errors))
-            self.validation_status.setStyleSheet("color: #c62828;")
-
-    def log_action(self, message, level="info"):
-        """Log an action and emit the log signal."""
-        getattr(logger, level)(message)
-        self.log_signal.emit(message, level)
-
-    def format_api_error(self, response):
-        """Format API error response for display in log widget.
-        
-        Args:
-            response (dict): Error response from API
-            
-        Returns:
-            str: Formatted error message
-        """
-        if not isinstance(response, dict):
-            return str(response)
-            
-        # Extract message and format it
-        if 'message' in response:
-            error_msg = response['message']
-            raw_response = response.get('raw_response', {})
-            return f"{error_msg}\nDetails: {raw_response}"
-        else:
-            return str(response)
-    
-    def accept(self):
-        """Process the dialog data when the user clicks OK."""
-        subname = self.subname_input.text().strip()
-        record_type = self.type_combo.currentText().strip()
-        
-        # Extract just the record type without description
-        if ' (' in record_type:
-            record_type = record_type.split(' (')[0]
-        
-        # Get the TTL value from the combo box's current data
-        ttl = self.ttl_input.currentData()
-        content = self.records_input.toPlainText().strip()
-        
-        # Parse multi-line content into a list of records
-        records = [line.strip() for line in content.split('\n') if line.strip()]
-        
-        if not records:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Missing Content",
-                "Please enter at least one record content"
-            )
-            return
-        
-        # Validate each record's content according to its type
-        for record in records:
-            is_valid, error_message = self.validate_record_content(record_type, record)
-            if not is_valid:
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    "Invalid Record Format",
-                    f"{error_message}\n\nPlease check your record format and try again."
-                )
-                return
-                
-        # Special case for TXT and SPF records - ensure they are properly quoted
-        if record_type in ['TXT', 'SPF']:
-            # Make sure each record is enclosed in quotes
-            records = [
-                r if r.startswith('"') and r.endswith('"') else f'"{r}"' 
-                for r in records
-            ]
-        
-        # Handle API calls differently for edit vs. create
-        if self.record:
-            # Update existing record
-            success, response = self.api_client.update_record(
-                self.domain, subname, record_type, ttl, records
-            )
-        else:
-            # Create new record
-            success, response = self.api_client.create_record(
-                self.domain, subname, record_type, ttl, records
-            )
-        
-        if success:
-            # Log successful operation with detailed information
-            operation_type = "updated" if self.record else "created"
-            record_details = f"{record_type} record for '{subname or '@'}' in domain '{self.domain}'"
-            
-            # For updates, show both old and new values
-            if self.record:
-                old_records = "\n".join(self.record.get('records', ['<empty>']))
-                new_records = "\n".join(records)
-                old_ttl = self.record.get('ttl', 0)
-                self.log_signal.emit(f"Successfully {operation_type} {record_details} - TTL: {ttl} - changed content from '{old_records}' to '{new_records}'", "success")
-            else:
-                # For new records, just show the new values
-                content_summary = "\n".join(records)
-                self.log_signal.emit(f"Successfully {operation_type} {record_details} with TTL: {ttl}, content: {content_summary}", "success")
-                
-            # First accept the dialog to close it properly
-            super(RecordDialog, self).accept()
-            
-            # Then trigger a refresh through the parent if possible
-            if hasattr(self.parent, 'records_changed') and self.parent is not None:
-                # Clear any cached data for the domain to ensure we get fresh data
-                if hasattr(self.parent, 'cache_manager') and hasattr(self.parent, 'current_domain'):
-                    self.parent.cache_manager.clear_domain_cache(self.parent.current_domain)
-                # Signal that records have changed
-                self.parent.records_changed.emit()
-        else:
-            # Handle the updated error response format
-            if isinstance(response, dict) and 'message' in response:
-                error_msg = response['message']
-                raw_response = response.get('raw_response', {})
-                
-                # Format a user-friendly message based on the error type
-                friendly_msg = ""
-                
-                # Case: Duplicate record error
-                if 'already exists' in error_msg:
-                    friendly_msg = ("A record with this name and type already exists.\n"
-                                   "You must edit the existing record instead of creating a new one.")
-                # Case: FQDN (fully qualified domain name) error
-                elif 'fully qualified' in error_msg and 'end in a dot' in error_msg:
-                    friendly_msg = ("The hostname must be fully qualified (end with a dot).\n"
-                                   "Example: 'example.com.' instead of 'example.com'")
-                # Case: Invalid record format
-                elif raw_response and 'non_field_errors' in raw_response:
-                    if isinstance(raw_response['non_field_errors'], list):
-                        friendly_msg = "\n".join(raw_response['non_field_errors'])
-                    else:
-                        friendly_msg = str(raw_response['non_field_errors'])
-                
-                # Also log the full error for debugging
-                self.log_signal.emit(f"API Error: {error_msg}\nDetails: {raw_response}", "error")
-                
-                # Display the error message box with detailed information
-                msg_box = QtWidgets.QMessageBox(self)
-                msg_box.setIcon(QtWidgets.QMessageBox.Icon.Critical)
-                msg_box.setWindowTitle("Error")
-                msg_box.setText(f"Failed to {'update' if self.record else 'create'} record")
-                
-                # Add the friendly message if available
-                if friendly_msg:
-                    msg_box.setInformativeText(friendly_msg)
-                else:
-                    # If no specific friendly message, use the error message
-                    msg_box.setInformativeText("The API rejected this record. See details for more information.")
-                
-                # Add the technical details
-                msg_box.setDetailedText(f"API Error: {error_msg}\n\nFull Response: {raw_response}")
-                
-                # Allow the message box to size properly based on content
-                layout = msg_box.layout()
-                if layout is not None:
-                    layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetDefaultConstraint)
-                
-                # Execute the message box
-                msg_box.exec()
-            else:
-                # Fallback for legacy error format
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to {'update' if self.record else 'create'} record: {response}"
-                )
-                
-                # Log the error
-                self.log_signal.emit(f"API Error: {response}", "error")
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'edit_panel'):
+            self.edit_panel.reposition(event.size())
+        if hasattr(self, '_delete_drawer'):
+            self._delete_drawer.reposition(event.size())

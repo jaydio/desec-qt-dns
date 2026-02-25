@@ -160,4 +160,4 @@ Key settings (all editable via **File → Settings**):
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+GPL v3 — see [LICENSE](LICENSE) for details.

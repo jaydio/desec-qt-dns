@@ -8,9 +8,13 @@ as well as managing per-token RRset policies.
 """
 
 import logging
-from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import Qt, QThreadPool, QRunnable, QObject, pyqtSignal
-from PyQt6.QtWidgets import QMessageBox
+from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtCore import Qt, QThreadPool, QRunnable, QObject, Signal, QPropertyAnimation, QEasingCurve
+from qfluentwidgets import (PushButton, PrimaryPushButton, LineEdit, CheckBox,
+                             PlainTextEdit, TableWidget, StrongBodyLabel, CaptionLabel,
+                             isDarkTheme, SubtitleLabel)
+from fluent_styles import container_qss, SPLITTER_QSS
+from notify_drawer import NotifyDrawer
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +33,7 @@ DNS_RECORD_TYPES = [
 # ---------------------------------------------------------------------------
 
 class _WorkerSignals(QObject):
-    done = pyqtSignal(bool, object)   # success, data
+    done = Signal(bool, object)   # success, data
 
 
 class _Worker(QRunnable):
@@ -76,8 +80,7 @@ class TokenSecretDialog(QtWidgets.QDialog):
         layout.setSpacing(12)
 
         # Header
-        header = QtWidgets.QLabel("Token Created Successfully")
-        header.setStyleSheet("font-size: 15px; font-weight: bold;")
+        header = StrongBodyLabel("Token Created Successfully")
         layout.addWidget(header)
 
         # Warning
@@ -86,37 +89,37 @@ class TokenSecretDialog(QtWidgets.QDialog):
             "Store it securely before closing this dialog."
         )
         warning.setWordWrap(True)
-        warning.setStyleSheet("color: #c62828; font-weight: bold;")
         layout.addWidget(warning)
 
         # Token value row
         token_row = QtWidgets.QHBoxLayout()
-        self._token_field = QtWidgets.QLineEdit(self.token_value)
+        self._token_field = LineEdit()
+        self._token_field.setText(self.token_value)
         self._token_field.setReadOnly(True)
         self._token_field.setFont(QtGui.QFont("Monospace", 10))
         self._token_field.setMinimumWidth(380)
         token_row.addWidget(self._token_field)
 
-        self._copy_btn = QtWidgets.QPushButton("Copy to Clipboard")
+        self._copy_btn = PushButton("Copy to Clipboard")
         self._copy_btn.clicked.connect(self._copy_token)
         token_row.addWidget(self._copy_btn)
         layout.addLayout(token_row)
 
         # Acknowledgement checkbox
-        self._ack_checkbox = QtWidgets.QCheckBox(
-            "I have securely stored my token value"
-        )
+        self._ack_checkbox = CheckBox("I have securely stored my token value")
         self._ack_checkbox.stateChanged.connect(self._on_ack_changed)
         layout.addWidget(self._ack_checkbox)
 
         # Close button (disabled until checkbox is checked)
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch()
-        self._close_btn = QtWidgets.QPushButton("Close")
+        self._close_btn = PushButton("Close")
         self._close_btn.setEnabled(False)
         self._close_btn.clicked.connect(self.accept)
         btn_row.addWidget(self._close_btn)
         layout.addLayout(btn_row)
+
+        self.setStyleSheet(container_qss())
 
     def _copy_token(self):
         QtWidgets.QApplication.clipboard().setText(self.token_value)
@@ -127,208 +130,324 @@ class TokenSecretDialog(QtWidgets.QDialog):
 
 
 # ---------------------------------------------------------------------------
-# TokenPolicyDialog — add / edit an RRset policy
+# TokenPolicyPanel — slide-in drawer for add / edit RRset policy
 # ---------------------------------------------------------------------------
 
-class TokenPolicyDialog(QtWidgets.QDialog):
-    """Dialog for creating or editing a single RRset policy on a token."""
+class TokenPolicyPanel(QtWidgets.QWidget):
+    """Slide-in right panel for adding or editing an RRset policy."""
 
-    def __init__(self, api_client, token_id, policy=None, parent=None):
-        """
-        Args:
-            api_client: APIClient instance
-            token_id (str): Token UUID this policy belongs to
-            policy (dict or None): Existing policy dict for editing; None = create new
-        """
+    PANEL_WIDTH = 400
+
+    save_done = QtCore.Signal()
+    cancelled = QtCore.Signal()
+
+    def __init__(self, api_client, parent=None):
         super().__init__(parent)
         self.api_client = api_client
-        self.token_id = token_id
-        self.policy = policy  # None → create mode
-        self.setWindowTitle("Edit Policy" if policy else "Add Policy")
-        self.setModal(True)
-        self.setMinimumSize(480, 300)
+        self._token_id = None
+        self._policy = None
+        self._animation = None
+        self.setObjectName("tokenPolicyPanel")
+        self.hide()
         self._setup_ui()
-        if policy:
-            self._populate(policy)
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        bg = QtGui.QColor(32, 32, 32) if isDarkTheme() else QtGui.QColor(243, 243, 243)
+        painter.fillRect(self.rect(), bg)
 
     def _setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
+
+        # Header row: title + close button
+        header_row = QtWidgets.QHBoxLayout()
+        self._title = SubtitleLabel("Add Policy")
+        header_row.addWidget(self._title, 1)
+        close_btn = PushButton("✕")
+        close_btn.setFixedSize(32, 32)
+        close_btn.setToolTip("Close (Esc)")
+        close_btn.clicked.connect(self._on_cancel)
+        header_row.addWidget(close_btn)
+        layout.addLayout(header_row)
+
+        # Escape shortcut
+        esc = QtGui.QShortcut(QtGui.QKeySequence(Qt.Key.Key_Escape), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self._on_cancel)
 
         desc = QtWidgets.QLabel(
             "Define a fine-grained access rule for this token. "
-            "Leave fields blank to create a default (catch-all) policy."
+            "Leave fields blank for a default catch-all policy."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #555;")
         layout.addWidget(desc)
 
         form = QtWidgets.QFormLayout()
         form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.DontWrapRows)
 
-        self._domain_edit = QtWidgets.QLineEdit()
+        self._domain_edit = LineEdit()
         self._domain_edit.setPlaceholderText("e.g. example.com  (blank = default policy)")
         form.addRow("Domain:", self._domain_edit)
 
-        self._subname_edit = QtWidgets.QLineEdit()
-        self._subname_edit.setPlaceholderText("e.g. www  (blank = match all subnames)")
+        self._subname_edit = LineEdit()
+        self._subname_edit.setPlaceholderText("e.g. www  (blank = match all)")
         form.addRow("Subname:", self._subname_edit)
 
         self._type_combo = QtWidgets.QComboBox()
-        self._type_combo.addItem("(Any / null — match all types)")
+        self._type_combo.addItem("(Any — match all types)")
         for t in DNS_RECORD_TYPES:
             self._type_combo.addItem(t)
         form.addRow("Type:", self._type_combo)
 
-        self._perm_write_check = QtWidgets.QCheckBox("Allow write (create/update/delete records)")
-        form.addRow("Write:", self._perm_write_check)
+        self._perm_write = CheckBox("Allow write access")
+        form.addRow("Write:", self._perm_write)
 
         layout.addLayout(form)
+
+        self._error_label = QtWidgets.QLabel("")
+        self._error_label.setWordWrap(True)
+        layout.addWidget(self._error_label)
+
         layout.addStretch()
 
-        # Buttons
-        btn_box = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Save |
-            QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-        btn_box.accepted.connect(self._save)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = PushButton("Cancel")
+        cancel_btn.clicked.connect(self._on_cancel)
+        btn_row.addWidget(cancel_btn)
+        self._save_btn = PrimaryPushButton("Save")
+        self._save_btn.clicked.connect(self._on_save)
+        btn_row.addWidget(self._save_btn)
+        layout.addLayout(btn_row)
 
-    def _populate(self, policy):
+    def open_for_add(self, token_id):
+        self._token_id = token_id
+        self._policy = None
+        self._title.setText("Add Policy")
+        self._domain_edit.clear()
+        self._subname_edit.clear()
+        self._type_combo.setCurrentIndex(0)
+        self._perm_write.setChecked(False)
+        self._error_label.setText("")
+        self.slide_in()
+
+    def open_for_edit(self, token_id, policy):
+        self._token_id = token_id
+        self._policy = policy
+        self._title.setText("Edit Policy")
         self._domain_edit.setText(policy.get('domain') or '')
         self._subname_edit.setText(policy.get('subname') or '')
         type_val = policy.get('type')
         if type_val and type_val in DNS_RECORD_TYPES:
             idx = self._type_combo.findText(type_val)
-            if idx >= 0:
-                self._type_combo.setCurrentIndex(idx)
-        self._perm_write_check.setChecked(bool(policy.get('perm_write', False)))
+            self._type_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        else:
+            self._type_combo.setCurrentIndex(0)
+        self._perm_write.setChecked(bool(policy.get('perm_write', False)))
+        self._error_label.setText("")
+        self.slide_in()
 
-    def _save(self):
+    def _on_save(self):
         domain = self._domain_edit.text().strip() or None
         subname = self._subname_edit.text().strip() or None
         type_text = self._type_combo.currentText()
         type_ = None if type_text.startswith('(') else type_text
-        perm_write = self._perm_write_check.isChecked()
+        perm_write = self._perm_write.isChecked()
 
-        if self.policy:
-            # Edit existing
+        self._save_btn.setEnabled(False)
+        self._save_btn.setText("Saving…")
+
+        if self._policy:
             success, result = self.api_client.update_token_policy(
-                self.token_id, self.policy['id'],
+                self._token_id, self._policy['id'],
                 domain=domain, subname=subname, type=type_, perm_write=perm_write
             )
         else:
-            # Create new
             success, result = self.api_client.create_token_policy(
-                self.token_id, domain=domain, subname=subname,
+                self._token_id, domain=domain, subname=subname,
                 type_=type_, perm_write=perm_write
             )
 
+        self._save_btn.setEnabled(True)
+        self._save_btn.setText("Save")
+
         if success:
-            self.accept()
+            self.slide_out()
+            self.save_done.emit()
         else:
             msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-            QMessageBox.critical(self, "Error", f"Failed to save policy:\n{msg}")
+            self._error_label.setText(f"Error: {msg}")
+
+    def _on_cancel(self):
+        self.slide_out()
+        self.cancelled.emit()
+
+    def slide_in(self):
+        self.setStyleSheet(
+            f"QWidget#{self.objectName()} {{ border-left: 1px solid rgba(128,128,128,0.35); }}"
+            + container_qss()
+        )
+        parent = self.parent()
+        if parent is None:
+            return
+        pw, ph = parent.width(), parent.height()
+        self.setGeometry(pw, 0, self.PANEL_WIDTH, ph)
+        self.show()
+        self.raise_()
+        self._run_animation(
+            QtCore.QPoint(pw, 0),
+            QtCore.QPoint(pw - self.PANEL_WIDTH, 0),
+            QEasingCurve.Type.OutCubic,
+        )
+
+    def slide_out(self):
+        parent = self.parent()
+        if parent is None:
+            self.hide()
+            return
+        pw = parent.width()
+        anim = self._run_animation(
+            self.pos(),
+            QtCore.QPoint(pw, 0),
+            QEasingCurve.Type.InCubic,
+        )
+        anim.finished.connect(self.hide)
+
+    def _run_animation(self, start, end, easing):
+        if self._animation and self._animation.state() == QPropertyAnimation.State.Running:
+            self._animation.stop()
+        anim = QPropertyAnimation(self, b"pos")
+        anim.setDuration(220)
+        anim.setStartValue(start)
+        anim.setEndValue(end)
+        anim.setEasingCurve(easing)
+        self._animation = anim
+        anim.start()
+        return anim
+
+    def reposition(self, parent_size):
+        if not self.isVisible():
+            return
+        x = parent_size.width() - self.PANEL_WIDTH
+        self.setGeometry(x, 0, self.PANEL_WIDTH, parent_size.height())
 
 
 # ---------------------------------------------------------------------------
-# CreateTokenDialog — form for creating a new token
+# CreateTokenPanel — slide-in drawer for creating a new token
 # ---------------------------------------------------------------------------
 
-class CreateTokenDialog(QtWidgets.QDialog):
-    """Dialog for creating a new API token."""
+class CreateTokenPanel(QtWidgets.QWidget):
+    """Slide-in right panel for creating a new API token."""
+
+    PANEL_WIDTH = 460
+
+    token_created = QtCore.Signal()
+    cancelled = QtCore.Signal()
 
     def __init__(self, api_client, parent=None):
         super().__init__(parent)
         self.api_client = api_client
-        self.created_token_value = None  # set on success
-        self.setWindowTitle("Create New Token")
-        self.setModal(True)
-        self.setMinimumSize(600, 460)
-        self.resize(600, 750)
+        self._animation = None
+        self.setObjectName("createTokenPanel")
+        self.hide()
         self._setup_ui()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        bg = QtGui.QColor(32, 32, 32) if isDarkTheme() else QtGui.QColor(243, 243, 243)
+        painter.fillRect(self.rect(), bg)
 
     def _setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
+        # Header row: title + close button
+        header_row = QtWidgets.QHBoxLayout()
+        header_row.addWidget(SubtitleLabel("New Token"), 1)
+        close_btn = PushButton("✕")
+        close_btn.setFixedSize(32, 32)
+        close_btn.setToolTip("Close (Esc)")
+        close_btn.clicked.connect(self._on_cancel)
+        header_row.addWidget(close_btn)
+        layout.addLayout(header_row)
+
+        # Escape shortcut
+        esc = QtGui.QShortcut(QtGui.QKeySequence(Qt.Key.Key_Escape), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self._on_cancel)
+
         desc = QtWidgets.QLabel(
-            "Create a new API token. After creation, the token value will be "
-            "shown once — make sure to copy it before closing."
+            "After creation the token value is shown once — copy it before closing."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #555;")
         layout.addWidget(desc)
 
-        # --- Basic settings ---
-        basic_group = QtWidgets.QGroupBox("Token Settings")
-        basic_form = QtWidgets.QFormLayout(basic_group)
-
-        self._name_edit = QtWidgets.QLineEdit()
+        form = QtWidgets.QFormLayout()
+        self._name_edit = LineEdit()
         self._name_edit.setPlaceholderText("e.g. My App Token")
-        basic_form.addRow("Name:", self._name_edit)
+        form.addRow("Name:", self._name_edit)
+        layout.addLayout(form)
 
-        self._perm_create = QtWidgets.QCheckBox("perm_create_domain — allow creating domains")
-        self._perm_create.setChecked(False)
-        basic_form.addRow("", self._perm_create)
+        self._perm_create = CheckBox("Create Domains")
+        self._perm_delete = CheckBox("Delete Domains")
+        self._perm_manage = CheckBox("Manage Tokens")
+        self._auto_policy = CheckBox("Auto Policy")
+        layout.addWidget(self._perm_create)
+        layout.addWidget(self._perm_delete)
+        layout.addWidget(self._perm_manage)
+        layout.addWidget(self._auto_policy)
 
-        self._perm_delete = QtWidgets.QCheckBox("perm_delete_domain — allow deleting domains")
-        self._perm_delete.setChecked(False)
-        basic_form.addRow("", self._perm_delete)
-
-        self._perm_manage = QtWidgets.QCheckBox("perm_manage_tokens — allow managing tokens")
-        self._perm_manage.setChecked(False)
-        basic_form.addRow("", self._perm_manage)
-
-        self._auto_policy = QtWidgets.QCheckBox(
-            "auto_policy — auto-create permissive RRset policy on domain creation"
-        )
-        self._auto_policy.setChecked(False)
-        basic_form.addRow("", self._auto_policy)
-
-        layout.addWidget(basic_group)
-
-        # --- Expiration ---
-        exp_group = QtWidgets.QGroupBox("Expiration (optional)")
-        exp_form = QtWidgets.QFormLayout(exp_group)
-
-        self._max_age_edit = QtWidgets.QLineEdit()
-        self._max_age_edit.setPlaceholderText("e.g. 30 00:00:00 (30 days)   blank = no limit")
+        exp_form = QtWidgets.QFormLayout()
+        self._max_age_edit = LineEdit()
+        self._max_age_edit.setPlaceholderText("e.g. 30 00:00:00  (blank = no limit)")
         exp_form.addRow("Max Age:", self._max_age_edit)
 
-        self._max_unused_edit = QtWidgets.QLineEdit()
-        self._max_unused_edit.setPlaceholderText("e.g. 7 00:00:00 (7 days)    blank = no limit")
-        exp_form.addRow("Max Unused Period:", self._max_unused_edit)
+        self._max_unused_edit = LineEdit()
+        self._max_unused_edit.setPlaceholderText("e.g. 7 00:00:00  (blank = no limit)")
+        exp_form.addRow("Max Unused:", self._max_unused_edit)
+        layout.addLayout(exp_form)
 
-        layout.addWidget(exp_group)
-
-        # --- Allowed subnets ---
-        subnet_group = QtWidgets.QGroupBox("Allowed Subnets (one CIDR per line)")
-        subnet_layout = QtWidgets.QVBoxLayout(subnet_group)
-        self._subnets_edit = QtWidgets.QPlainTextEdit()
+        layout.addWidget(QtWidgets.QLabel("Allowed Subnets (one CIDR per line):"))
+        self._subnets_edit = PlainTextEdit()
         self._subnets_edit.setPlainText("0.0.0.0/0\n::/0")
         self._subnets_edit.setFixedHeight(72)
-        subnet_layout.addWidget(self._subnets_edit)
-        layout.addWidget(subnet_group)
+        layout.addWidget(self._subnets_edit)
+
+        self._error_label = QtWidgets.QLabel("")
+        self._error_label.setWordWrap(True)
+        layout.addWidget(self._error_label)
 
         layout.addStretch()
 
-        # Buttons
-        btn_box = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-        self._create_btn = QtWidgets.QPushButton("Create Token")
-        self._create_btn.setDefault(True)
-        btn_box.addButton(self._create_btn, QtWidgets.QDialogButtonBox.ButtonRole.AcceptRole)
-        self._create_btn.clicked.connect(self._create)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = PushButton("Cancel")
+        cancel_btn.clicked.connect(self._on_cancel)
+        btn_row.addWidget(cancel_btn)
+        self._create_btn = PrimaryPushButton("Create Token")
+        self._create_btn.clicked.connect(self._on_create)
+        btn_row.addWidget(self._create_btn)
+        layout.addLayout(btn_row)
 
-    def _create(self):
+    def open(self):
+        self._name_edit.clear()
+        self._perm_create.setChecked(False)
+        self._perm_delete.setChecked(False)
+        self._perm_manage.setChecked(False)
+        self._auto_policy.setChecked(False)
+        self._max_age_edit.clear()
+        self._max_unused_edit.clear()
+        self._subnets_edit.setPlainText("0.0.0.0/0\n::/0")
+        self._error_label.setText("")
+        self.slide_in()
+
+    def _on_create(self):
         name = self._name_edit.text().strip()
         if not name:
-            QMessageBox.warning(self, "Missing Name", "Please enter a name for the token.")
+            self._error_label.setText("Token name cannot be empty.")
             return
 
         max_age = self._max_age_edit.text().strip() or None
@@ -358,39 +477,82 @@ class CreateTokenDialog(QtWidgets.QDialog):
         if success:
             token_id = result.get('id', '')
             token_value = result.get('token', '')
-            self.created_token_value = token_value
 
-            # Create a default (catch-all) policy with no write access.
-            # The API requires the first policy to be the default, and this
-            # provides a secure baseline — no access unless explicitly granted.
             if token_id:
-                pol_success, pol_result = self.api_client.create_token_policy(
-                    token_id,
-                    domain=None, subname=None, type_=None, perm_write=False,
+                self.api_client.create_token_policy(
+                    token_id, domain=None, subname=None, type_=None, perm_write=False,
                 )
-                if not pol_success:
-                    pol_msg = (
-                        pol_result.get('message', str(pol_result))
-                        if isinstance(pol_result, dict) else str(pol_result)
-                    )
-                    logger.warning(f"Default policy creation failed: {pol_msg}")
 
-            # Show secret dialog — must be closed before returning Accepted
-            secret_dlg = TokenSecretDialog(token_value, self)
+            secret_dlg = TokenSecretDialog(token_value, self.window())
             secret_dlg.exec()
-            self.accept()
+
+            self.slide_out()
+            self.token_created.emit()
         else:
             msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-            QMessageBox.critical(self, "Create Failed", f"Failed to create token:\n{msg}")
+            self._error_label.setText(f"Error: {msg}")
+
+    def _on_cancel(self):
+        self.slide_out()
+        self.cancelled.emit()
+
+    def slide_in(self):
+        self.setStyleSheet(
+            f"QWidget#{self.objectName()} {{ border-left: 1px solid rgba(128,128,128,0.35); }}"
+            + container_qss()
+        )
+        parent = self.parent()
+        if parent is None:
+            return
+        pw, ph = parent.width(), parent.height()
+        self.setGeometry(pw, 0, self.PANEL_WIDTH, ph)
+        self.show()
+        self.raise_()
+        self._run_animation(
+            QtCore.QPoint(pw, 0),
+            QtCore.QPoint(pw - self.PANEL_WIDTH, 0),
+            QEasingCurve.Type.OutCubic,
+        )
+
+    def slide_out(self):
+        parent = self.parent()
+        if parent is None:
+            self.hide()
+            return
+        pw = parent.width()
+        anim = self._run_animation(
+            self.pos(),
+            QtCore.QPoint(pw, 0),
+            QEasingCurve.Type.InCubic,
+        )
+        anim.finished.connect(self.hide)
+
+    def _run_animation(self, start, end, easing):
+        if self._animation and self._animation.state() == QPropertyAnimation.State.Running:
+            self._animation.stop()
+        anim = QPropertyAnimation(self, b"pos")
+        anim.setDuration(220)
+        anim.setStartValue(start)
+        anim.setEndValue(end)
+        anim.setEasingCurve(easing)
+        self._animation = anim
+        anim.start()
+        return anim
+
+    def reposition(self, parent_size):
+        if not self.isVisible():
+            return
+        x = parent_size.width() - self.PANEL_WIDTH
+        self.setGeometry(x, 0, self.PANEL_WIDTH, parent_size.height())
 
 
 # ---------------------------------------------------------------------------
 # TokenManagerDialog — main token management window
 # ---------------------------------------------------------------------------
 
-class TokenManagerDialog(QtWidgets.QDialog):
+class TokenManagerInterface(QtWidgets.QWidget):
     """
-    Main dialog for managing deSEC API tokens.
+    Token management page for the Fluent sidebar navigation.
 
     Left panel: table listing all tokens.
     Right panel: tab widget with Details and Policies tabs.
@@ -398,14 +560,16 @@ class TokenManagerDialog(QtWidgets.QDialog):
 
     def __init__(self, api_client, parent=None):
         super().__init__(parent)
+        self.setObjectName("tokenManagerInterface")
         self.api_client = api_client
         self._current_token_id = None   # token currently shown in detail panel
         self._policies = []             # policies for current token
-        self.setWindowTitle("Token Manager")
-        self.setModal(True)
-        self.setMinimumSize(960, 640)
-        self.resize(1280, 820)
         self._setup_ui()
+
+    def showEvent(self, event):
+        """Load tokens and refresh theme-aware styles whenever the page becomes visible."""
+        super().showEvent(event)
+        self.setStyleSheet(container_qss())
         self._load_tokens()
 
     # ------------------------------------------------------------------
@@ -414,37 +578,39 @@ class TokenManagerDialog(QtWidgets.QDialog):
 
     def _setup_ui(self):
         outer = QtWidgets.QVBoxLayout(self)
-        outer.setSpacing(8)
-
-        # Header
-        header = QtWidgets.QLabel("API Token Manager")
-        header.setStyleSheet("font-size: 15px; font-weight: bold;")
-        outer.addWidget(header)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
         # Main splitter
         splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(6)
+        splitter.setHandleWidth(1)
+        splitter.setStyleSheet(SPLITTER_QSS)
         outer.addWidget(splitter, 1)
 
         # ---- Left panel ----
-        left_widget = QtWidgets.QWidget()
+        self._left_widget = left_widget = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 4, 0)
+        left_layout.setContentsMargins(6, 6, 6, 6)
+        left_layout.setSpacing(6)
 
-        left_label = QtWidgets.QLabel("Tokens")
-        left_label.setStyleSheet("font-weight: bold;")
-        left_layout.addWidget(left_label)
+        title_layout = QtWidgets.QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.addWidget(StrongBodyLabel("Tokens"))
+        title_layout.addStretch()
+        self._token_count_label = CaptionLabel("Total tokens: 0")
+        title_layout.addWidget(self._token_count_label)
+        left_layout.addLayout(title_layout)
 
-        self._token_table = QtWidgets.QTableWidget()
-        self._token_table.setColumnCount(5)
+        self._token_table = TableWidget()
+        self._token_table.setColumnCount(4)
         self._token_table.setHorizontalHeaderLabels(
-            ["Name", "Created", "Last Used", "Valid", "Perms"]
+            ["Name", "Created", "Last Used", "Perms"]
         )
         self._token_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
         )
         self._token_table.setSelectionMode(
-            QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
         self._token_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
@@ -452,12 +618,21 @@ class TokenManagerDialog(QtWidgets.QDialog):
         self._token_table.verticalHeader().setVisible(False)
         self._token_table.horizontalHeader().setStretchLastSection(False)
         self._token_table.horizontalHeader().setSectionResizeMode(
-            0, QtWidgets.QHeaderView.ResizeMode.Stretch
+            0, QtWidgets.QHeaderView.ResizeMode.Interactive
         )
-        for col in (1, 2, 3, 4):
-            self._token_table.horizontalHeader().setSectionResizeMode(
-                col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
-            )
+        self._token_table.horizontalHeader().setSectionResizeMode(
+            1, QtWidgets.QHeaderView.ResizeMode.Interactive
+        )
+        self._token_table.horizontalHeader().setSectionResizeMode(
+            2, QtWidgets.QHeaderView.ResizeMode.Interactive
+        )
+        self._token_table.horizontalHeader().setSectionResizeMode(
+            3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._token_table.setColumnWidth(0, 180)
+        self._token_table.setColumnWidth(1, 155)
+        self._token_table.setColumnWidth(2, 155)
+        self._token_table.setAlternatingRowColors(True)
         self._token_table.selectionModel().selectionChanged.connect(
             self._on_token_selection_changed
         )
@@ -465,17 +640,16 @@ class TokenManagerDialog(QtWidgets.QDialog):
 
         # Buttons below token table
         tbl_btn_row = QtWidgets.QHBoxLayout()
-        self._new_btn = QtWidgets.QPushButton("New Token")
+        self._new_btn = PushButton("New Token")
         self._new_btn.clicked.connect(self._new_token)
         tbl_btn_row.addWidget(self._new_btn)
 
-        self._delete_btn = QtWidgets.QPushButton("Delete")
+        self._delete_btn = PushButton("Delete")
         self._delete_btn.setEnabled(False)
-        self._delete_btn.setStyleSheet("QPushButton { color: #c62828; }")
         self._delete_btn.clicked.connect(self._delete_token)
         tbl_btn_row.addWidget(self._delete_btn)
 
-        self._refresh_btn = QtWidgets.QPushButton("Refresh")
+        self._refresh_btn = PushButton("Refresh")
         self._refresh_btn.clicked.connect(self._load_tokens)
         tbl_btn_row.addWidget(self._refresh_btn)
 
@@ -485,7 +659,14 @@ class TokenManagerDialog(QtWidgets.QDialog):
         # ---- Right panel ----
         right_widget = QtWidgets.QWidget()
         right_layout = QtWidgets.QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(4, 0, 0, 0)
+        right_layout.setContentsMargins(6, 6, 6, 6)
+        right_layout.setSpacing(6)
+
+        right_title_layout = QtWidgets.QHBoxLayout()
+        right_title_layout.setContentsMargins(0, 0, 0, 0)
+        right_title_layout.addWidget(StrongBodyLabel("Token Details"))
+        right_title_layout.addStretch()
+        right_layout.addLayout(right_title_layout)
 
         self._tab_widget = QtWidgets.QTabWidget()
         right_layout.addWidget(self._tab_widget)
@@ -495,24 +676,33 @@ class TokenManagerDialog(QtWidgets.QDialog):
 
         splitter.addWidget(right_widget)
         splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([500, 500])
-
-        # Bottom close button
-        bottom_row = QtWidgets.QHBoxLayout()
-        bottom_row.addStretch()
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        bottom_row.addWidget(close_btn)
-        outer.addLayout(bottom_row)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([340, 760])
 
         # Initially show placeholder in both tabs
         self._set_detail_enabled(False)
         self._set_policies_enabled(False)
 
+        self.setStyleSheet(container_qss())
+
+        # Slide-in drawer panels (absolutely positioned overlays)
+        self._policy_panel = TokenPolicyPanel(self.api_client, parent=self)
+        self._policy_panel.save_done.connect(lambda: self._load_policies(self._current_token_id))
+
+        self._create_panel = CreateTokenPanel(self.api_client, parent=self)
+        self._create_panel.token_created.connect(self._load_tokens)
+
+        # Delete confirmation drawer (slides from top, scoped to left panel)
+        from confirm_drawer import DeleteConfirmDrawer
+        self._delete_drawer = DeleteConfirmDrawer(parent=self._left_widget)
+
+        # Notification drawer (slides from top, full page width)
+        self._notify_drawer = NotifyDrawer(parent=self)
+
     def _build_details_tab(self):
         """Build and return the Details tab widget."""
         widget = QtWidgets.QWidget()
+        widget.setStyleSheet("background: transparent;")
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setSpacing(10)
 
@@ -520,7 +710,6 @@ class TokenManagerDialog(QtWidgets.QDialog):
             "Select a token to view and edit details."
         )
         self._detail_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._detail_placeholder.setStyleSheet("color: palette(placeholdertext);")
         layout.addWidget(self._detail_placeholder)
 
         # --- Read-only info ---
@@ -528,12 +717,11 @@ class TokenManagerDialog(QtWidgets.QDialog):
         info_form = QtWidgets.QFormLayout(self._info_group)
 
         id_row = QtWidgets.QHBoxLayout()
-        self._info_id = QtWidgets.QLineEdit()
+        self._info_id = LineEdit()
         self._info_id.setReadOnly(True)
-        self._info_id.setStyleSheet("background: transparent; border: none;")
         id_row.addWidget(self._info_id)
-        copy_id_btn = QtWidgets.QPushButton("Copy")
-        copy_id_btn.setFixedWidth(54)
+        copy_id_btn = PushButton("Copy")
+        copy_id_btn.setFixedWidth(72)
         copy_id_btn.clicked.connect(lambda: (
             QtWidgets.QApplication.clipboard().setText(self._info_id.text()),
             copy_id_btn.setText("✓")
@@ -562,39 +750,39 @@ class TokenManagerDialog(QtWidgets.QDialog):
         self._settings_group = QtWidgets.QGroupBox("Settings")
         settings_form = QtWidgets.QFormLayout(self._settings_group)
 
-        self._edit_name = QtWidgets.QLineEdit()
+        self._edit_name = LineEdit()
         self._edit_name.setPlaceholderText("Token name")
         settings_form.addRow("Name:", self._edit_name)
 
-        self._edit_perm_create = QtWidgets.QCheckBox("perm_create_domain")
+        self._edit_perm_create = CheckBox("Create Domains")
         settings_form.addRow("", self._edit_perm_create)
 
-        self._edit_perm_delete = QtWidgets.QCheckBox("perm_delete_domain")
+        self._edit_perm_delete = CheckBox("Delete Domains")
         settings_form.addRow("", self._edit_perm_delete)
 
-        self._edit_perm_manage = QtWidgets.QCheckBox("perm_manage_tokens")
+        self._edit_perm_manage = CheckBox("Manage Tokens")
         settings_form.addRow("", self._edit_perm_manage)
 
-        self._edit_auto_policy = QtWidgets.QCheckBox("auto_policy")
+        self._edit_auto_policy = CheckBox("Auto Policy")
         self._edit_auto_policy.setToolTip(
             "When enabled, automatically creates a permissive RRset policy\n"
             "for each domain created with this token."
         )
         settings_form.addRow("", self._edit_auto_policy)
 
-        self._edit_max_age = QtWidgets.QLineEdit()
+        self._edit_max_age = LineEdit()
         self._edit_max_age.setPlaceholderText(
             "e.g. 30 00:00:00 (30 days)   blank = no limit"
         )
         settings_form.addRow("Max Age:", self._edit_max_age)
 
-        self._edit_max_unused = QtWidgets.QLineEdit()
+        self._edit_max_unused = LineEdit()
         self._edit_max_unused.setPlaceholderText(
             "e.g. 7 00:00:00 (7 days)    blank = no limit"
         )
         settings_form.addRow("Max Unused Period:", self._edit_max_unused)
 
-        self._edit_subnets = QtWidgets.QPlainTextEdit()
+        self._edit_subnets = PlainTextEdit()
         self._edit_subnets.setFixedHeight(72)
         self._edit_subnets.setPlaceholderText("One CIDR per line, e.g. 0.0.0.0/0")
         settings_form.addRow("Allowed Subnets:", self._edit_subnets)
@@ -604,7 +792,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
         # Save button
         save_row = QtWidgets.QHBoxLayout()
         save_row.addStretch()
-        self._save_btn = QtWidgets.QPushButton("Save Changes")
+        self._save_btn = PushButton("Save Changes")
         self._save_btn.clicked.connect(self._save_token)
         save_row.addWidget(self._save_btn)
         layout.addLayout(save_row)
@@ -615,6 +803,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
     def _build_policies_tab(self):
         """Build and return the RRset Policies tab widget."""
         widget = QtWidgets.QWidget()
+        widget.setStyleSheet("background: transparent;")
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setSpacing(8)
 
@@ -622,7 +811,6 @@ class TokenManagerDialog(QtWidgets.QDialog):
             "Select a token to view and manage its RRset policies."
         )
         self._policy_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._policy_placeholder.setStyleSheet("color: palette(placeholdertext);")
         layout.addWidget(self._policy_placeholder)
 
         desc = QtWidgets.QLabel(
@@ -630,10 +818,9 @@ class TokenManagerDialog(QtWidgets.QDialog):
             "and record type. Policies with all-null fields act as a default catch-all."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: palette(placeholdertext); font-size: 11px;")
         layout.addWidget(desc)
 
-        self._policy_table = QtWidgets.QTableWidget()
+        self._policy_table = TableWidget()
         self._policy_table.setColumnCount(4)
         self._policy_table.setHorizontalHeaderLabels(
             ["Domain", "Subname", "Type", "Write"]
@@ -642,7 +829,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
         )
         self._policy_table.setSelectionMode(
-            QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
         self._policy_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
@@ -655,25 +842,26 @@ class TokenManagerDialog(QtWidgets.QDialog):
             self._policy_table.horizontalHeader().setSectionResizeMode(
                 col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
             )
+        self._policy_table.setAlternatingRowColors(True)
         self._policy_table.selectionModel().selectionChanged.connect(
             self._on_policy_selection_changed
         )
+        self._policy_table.cellDoubleClicked.connect(self._on_policy_double_clicked)
         layout.addWidget(self._policy_table)
 
         # Policy buttons
         pol_btn_row = QtWidgets.QHBoxLayout()
-        self._add_policy_btn = QtWidgets.QPushButton("Add Policy")
+        self._add_policy_btn = PushButton("Add Policy")
         self._add_policy_btn.clicked.connect(self._add_policy)
         pol_btn_row.addWidget(self._add_policy_btn)
 
-        self._edit_policy_btn = QtWidgets.QPushButton("Edit Policy")
+        self._edit_policy_btn = PushButton("Edit Policy")
         self._edit_policy_btn.setEnabled(False)
         self._edit_policy_btn.clicked.connect(self._edit_policy)
         pol_btn_row.addWidget(self._edit_policy_btn)
 
-        self._delete_policy_btn = QtWidgets.QPushButton("Delete Policy")
+        self._delete_policy_btn = PushButton("Delete Policy")
         self._delete_policy_btn.setEnabled(False)
-        self._delete_policy_btn.setStyleSheet("QPushButton { color: #c62828; }")
         self._delete_policy_btn.clicked.connect(self._delete_policy)
         pol_btn_row.addWidget(self._delete_policy_btn)
 
@@ -719,10 +907,11 @@ class TokenManagerDialog(QtWidgets.QDialog):
 
         if not success:
             msg = data.get('message', str(data)) if isinstance(data, dict) else str(data)
-            QMessageBox.warning(self, "Load Failed", f"Could not load tokens:\n{msg}")
+            self._notify_drawer.error("Load Failed", f"Could not load tokens:\n{msg}")
             return
 
         tokens = data if isinstance(data, list) else []
+        self._token_count_label.setText(f"Total tokens: {len(tokens)}")
         self._token_table.setRowCount(0)
 
         for token in tokens:
@@ -739,13 +928,6 @@ class TokenManagerDialog(QtWidgets.QDialog):
             last_used = _format_ts(token.get('last_used')) or 'Never'
             self._token_table.setItem(row, 2, QtWidgets.QTableWidgetItem(last_used))
 
-            is_valid = token.get('is_valid', True)
-            valid_item = QtWidgets.QTableWidgetItem('Yes' if is_valid else 'No')
-            valid_item.setForeground(
-                QtGui.QColor('#2e7d32') if is_valid else QtGui.QColor('#c62828')
-            )
-            self._token_table.setItem(row, 3, valid_item)
-
             perms = _perm_flags(token)
             perm_item = QtWidgets.QTableWidgetItem(perms)
             perm_item.setToolTip(
@@ -753,27 +935,38 @@ class TokenManagerDialog(QtWidgets.QDialog):
                 "D = perm_delete_domain\n"
                 "M = perm_manage_tokens"
             )
-            self._token_table.setItem(row, 4, perm_item)
+            self._token_table.setItem(row, 3, perm_item)
 
     # ------------------------------------------------------------------
     # Token table selection
     # ------------------------------------------------------------------
 
     def _on_token_selection_changed(self):
-        rows = self._token_table.selectedItems()
-        if not rows:
+        selected_rows = set(idx.row() for idx in self._token_table.selectedIndexes())
+        if not selected_rows:
             self._current_token_id = None
             self._delete_btn.setEnabled(False)
+            self._delete_btn.setText("Delete")
             self._set_detail_enabled(False)
             self._set_policies_enabled(False)
             return
 
-        token = self._token_table.item(
-            self._token_table.currentRow(), 0
-        ).data(Qt.ItemDataRole.UserRole)
+        n = len(selected_rows)
+        self._delete_btn.setEnabled(True)
+        self._delete_btn.setText(f"Delete ({n})" if n > 1 else "Delete")
+
+        # Show details for the most-recently-focused row
+        current_row = self._token_table.currentRow()
+        if current_row < 0:
+            current_row = min(selected_rows)
+        name_item = self._token_table.item(current_row, 0)
+        if name_item is None:
+            return
+        token = name_item.data(Qt.ItemDataRole.UserRole)
+        if token is None:
+            return
 
         self._current_token_id = token.get('id')
-        self._delete_btn.setEnabled(True)
         self._set_detail_enabled(True)
         self._populate_details(token)
         self._set_policies_enabled(True)
@@ -791,9 +984,6 @@ class TokenManagerDialog(QtWidgets.QDialog):
 
         is_valid = token.get('is_valid', True)
         self._info_valid.setText('Yes' if is_valid else 'No')
-        self._info_valid.setStyleSheet(
-            f"color: {'#2e7d32' if is_valid else '#c62828'};"
-        )
 
         mfa = token.get('mfa')
         self._info_mfa.setText(
@@ -817,7 +1007,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
 
         name = self._edit_name.text().strip()
         if not name:
-            QMessageBox.warning(self, "Missing Name", "Token name cannot be empty.")
+            self._notify_drawer.warning("Missing Name", "Token name cannot be empty.")
             return
 
         max_age = self._edit_max_age.text().strip() or None
@@ -855,51 +1045,73 @@ class TokenManagerDialog(QtWidgets.QDialog):
                 if name_item:
                     name_item.setText(result.get('name', name))
                     name_item.setData(Qt.ItemDataRole.UserRole, result)
-                    perm_item = self._token_table.item(row, 4)
+                    perm_item = self._token_table.item(row, 3)
                     if perm_item:
                         perm_item.setText(_perm_flags(result))
         else:
             msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-            QMessageBox.critical(self, "Save Failed", f"Failed to save token:\n{msg}")
+            self._notify_drawer.error("Save Failed", f"Failed to save token:\n{msg}")
 
     # ------------------------------------------------------------------
     # New / Delete token
     # ------------------------------------------------------------------
 
     def _new_token(self):
-        dlg = CreateTokenDialog(self.api_client, self)
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self._load_tokens()
+        self._create_panel.open()
 
     def _delete_token(self):
-        if not self._current_token_id:
+        selected_rows = sorted(set(idx.row() for idx in self._token_table.selectedIndexes()))
+        if not selected_rows:
             return
 
-        row = self._token_table.currentRow()
-        name_item = self._token_table.item(row, 0)
-        token_name = name_item.text() if name_item else self._current_token_id
+        tokens_to_delete = []
+        for row in selected_rows:
+            name_item = self._token_table.item(row, 0)
+            if name_item:
+                token = name_item.data(Qt.ItemDataRole.UserRole)
+                if token:
+                    tokens_to_delete.append(token)
 
-        confirm = QMessageBox.question(
-            self, "Confirm Delete",
-            f"Delete token '{token_name}'?\n\n"
-            "Warning: if this is the token you are currently using, "
-            "the application will lose API access and you will need to "
-            "re-authenticate.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
+        if not tokens_to_delete:
             return
 
-        success, result = self.api_client.delete_token(self._current_token_id)
-        if success:
+        count = len(tokens_to_delete)
+        token_names = [t.get('name', t.get('id', '')) for t in tokens_to_delete]
+
+        if count == 1:
+            message = (
+                f"Delete token '{token_names[0]}'?\n\n"
+                "Warning: if this is the token you are currently using, "
+                "the application will lose API access."
+            )
+        else:
+            message = (
+                f"Delete {count} tokens?\n\n"
+                "Warning: if any of these is the token you are currently using, "
+                "the application will lose API access."
+            )
+
+        def _do_delete():
+            errors = []
+            for token in tokens_to_delete:
+                success, result = self.api_client.delete_token(token['id'])
+                if not success:
+                    msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                    errors.append(msg)
             self._load_tokens()
             self._current_token_id = None
             self._set_detail_enabled(False)
             self._set_policies_enabled(False)
-        else:
-            msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-            QMessageBox.critical(self, "Delete Failed", f"Failed to delete token:\n{msg}")
+            if errors:
+                self._notify_drawer.error("Delete Failed", "\n".join(errors))
+
+        self._delete_drawer.ask(
+            title="Delete Token" if count == 1 else f"Delete {count} Tokens",
+            message=message,
+            items=token_names if count > 1 else None,
+            on_confirm=_do_delete,
+            confirm_text=f"Delete {count} Token{'s' if count > 1 else ''}",
+        )
 
     # ------------------------------------------------------------------
     # Policies tab loading
@@ -947,7 +1159,7 @@ class TokenManagerDialog(QtWidgets.QDialog):
                 'Yes' if policy.get('perm_write') else 'No'
             )
             if policy.get('perm_write'):
-                write_item.setForeground(QtGui.QColor('#2e7d32'))
+                write_item.setForeground(QtGui.QColor('#66BB6A' if isDarkTheme() else '#2e7d32'))
             self._policy_table.setItem(row, 3, write_item)
 
     # ------------------------------------------------------------------
@@ -955,15 +1167,20 @@ class TokenManagerDialog(QtWidgets.QDialog):
     # ------------------------------------------------------------------
 
     def _on_policy_selection_changed(self):
-        has_sel = bool(self._policy_table.selectedItems())
-        self._edit_policy_btn.setEnabled(has_sel)
-        self._delete_policy_btn.setEnabled(has_sel)
+        selected_rows = len(set(idx.row() for idx in self._policy_table.selectedIndexes()))
+        self._edit_policy_btn.setEnabled(selected_rows == 1)
+        self._delete_policy_btn.setEnabled(selected_rows > 0)
 
     def _get_selected_policy(self):
         row = self._policy_table.currentRow()
         if row < 0 or row >= len(self._policies):
             return None
         return self._policies[row]
+
+    def _on_policy_double_clicked(self, row, column):
+        if not self._current_token_id or row < 0 or row >= len(self._policies):
+            return
+        self._policy_panel.open_for_edit(self._current_token_id, self._policies[row])
 
     # ------------------------------------------------------------------
     # Policy CRUD
@@ -972,58 +1189,80 @@ class TokenManagerDialog(QtWidgets.QDialog):
     def _add_policy(self):
         if not self._current_token_id:
             return
-        dlg = TokenPolicyDialog(self.api_client, self._current_token_id, parent=self)
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self._load_policies(self._current_token_id)
+        self._policy_panel.open_for_add(self._current_token_id)
 
     def _edit_policy(self):
         policy = self._get_selected_policy()
         if not policy or not self._current_token_id:
             return
-        dlg = TokenPolicyDialog(
-            self.api_client, self._current_token_id, policy=policy, parent=self
-        )
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self._load_policies(self._current_token_id)
+        self._policy_panel.open_for_edit(self._current_token_id, policy)
 
     def _delete_policy(self):
-        policy = self._get_selected_policy()
-        if not policy or not self._current_token_id:
+        if not self._current_token_id:
             return
 
-        confirm = QMessageBox.question(
-            self, "Confirm Delete",
-            "Delete this RRset policy?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
+        selected_rows = sorted(set(idx.row() for idx in self._policy_table.selectedIndexes()))
+        if not selected_rows:
             return
 
-        success, result = self.api_client.delete_token_policy(
-            self._current_token_id, policy['id']
-        )
-        if success:
+        policies_to_delete = [
+            self._policies[row] for row in selected_rows if row < len(self._policies)
+        ]
+        if not policies_to_delete:
+            return
+
+        count = len(policies_to_delete)
+        policy_labels = [
+            f"{p.get('domain') or '(default)'} / {p.get('subname') if p.get('subname') is not None else '(any)'} / {p.get('type') or '(any)'}"
+            for p in policies_to_delete
+        ]
+
+        def _do_delete():
+            errors = []
+            for policy in policies_to_delete:
+                success, result = self.api_client.delete_token_policy(
+                    self._current_token_id, policy['id']
+                )
+                if not success:
+                    msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                    errors.append(msg)
             self._load_policies(self._current_token_id)
-        else:
-            msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-            QMessageBox.critical(self, "Delete Failed", f"Failed to delete policy:\n{msg}")
+            if errors:
+                self._notify_drawer.error("Delete Failed", "\n".join(errors))
+
+        self._delete_drawer.ask(
+            title=f"Delete {'Policy' if count == 1 else f'{count} Policies'}",
+            message=f"Delete {count} selected {'policy' if count == 1 else 'policies'}?",
+            items=policy_labels,
+            on_confirm=_do_delete,
+            confirm_text=f"Delete {'Policy' if count == 1 else f'{count} Policies'}",
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_policy_panel'):
+            self._policy_panel.reposition(event.size())
+        if hasattr(self, '_create_panel'):
+            self._create_panel.reposition(event.size())
+        if hasattr(self, '_delete_drawer'):
+            self._delete_drawer.reposition(self._left_widget.size())
+        if hasattr(self, '_notify_drawer'):
+            self._notify_drawer.reposition(event.size())
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _format_ts(ts_str):
+def _format_ts(ts_str, short=False):
     """Format an ISO-8601 timestamp string to a shorter readable form."""
     if not ts_str:
         return None
     try:
-        # Strip sub-second precision and timezone suffix for brevity
-        ts = ts_str[:19].replace('T', ' ')
+        ts = ts_str[:16].replace('T', ' ')  # YYYY-MM-DD HH:MM
         return ts
     except Exception:
-        return ts_str
+        return ts_str[:16] if ts_str else ts_str
 
 
 def _perm_flags(token):
@@ -1043,4 +1282,4 @@ def _italicize(item):
     font = item.font()
     font.setItalic(True)
     item.setFont(font)
-    item.setForeground(QtGui.QColor('#888'))
+    item.setForeground(QtGui.QColor('#aaa' if isDarkTheme() else '#888'))
