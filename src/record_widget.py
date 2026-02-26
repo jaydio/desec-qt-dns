@@ -509,8 +509,6 @@ class RecordEditPanel(QtWidgets.QWidget):
                 for r in records
             ]
 
-        self._done_btn.setText("Saving…")
-
         is_edit = bool(self._record)
         domain = self._domain
 
@@ -519,11 +517,8 @@ class RecordEditPanel(QtWidgets.QWidget):
             op = "updated" if is_edit else "created"
 
             def _on_done_callback(success, response):
-                self._done_btn.setEnabled(True)
-                self._done_btn.setText("Done")
                 if success:
                     if self.version_manager and domain:
-                        # Grab parent widget's records for the snapshot
                         parent = self.parent()
                         recs = getattr(parent, 'records', None)
                         if recs:
@@ -535,10 +530,12 @@ class RecordEditPanel(QtWidgets.QWidget):
                         f"Successfully {op} {record_type} record for '{subname or '@'}' in {domain}",
                         "success",
                     )
-                    self.slide_out()
                     self.save_done.emit()
                 else:
-                    self._handle_save_error(response)
+                    if isinstance(response, dict) and 'message' in response:
+                        self.log_signal.emit(f"Failed to save record: {response['message']}", "error")
+                    else:
+                        self.log_signal.emit(f"Failed to save record: {response}", "error")
 
             item = QueueItem(
                 priority=PRIORITY_NORMAL,
@@ -550,22 +547,14 @@ class RecordEditPanel(QtWidgets.QWidget):
             )
             self.api_queue.enqueue(item)
 
-            # If the queue is paused (offline / rate-limited), don't hang —
-            # restore the button and close the panel immediately.
-            # The item stays queued and will be processed when the queue resumes.
-            if self.api_queue.is_paused:
-                self._done_btn.setEnabled(True)
-                self._done_btn.setText("Done")
-                op_verb = "Update" if is_edit else "Create"
-                self._set_status(
-                    f"Queued: {op_verb} {record_type} — will be sent when back online.", "info"
-                )
-                self.log_signal.emit(
-                    f"Queued (offline): {op_verb} {record_type} for "
-                    f"'{subname or '@'}' in {domain}",
-                    "info",
-                )
-                self.slide_out()
+            # Close panel immediately — the queue processes in the background
+            self._done_btn.setEnabled(True)
+            op_verb = "Update" if is_edit else "Create"
+            self.log_signal.emit(
+                f"Queued: {op_verb} {record_type} for '{subname or '@'}' in {domain}",
+                "info",
+            )
+            self.slide_out()
         else:
             if is_edit:
                 success, response = self.api_client.update_record(

@@ -267,9 +267,6 @@ class TokenPolicyPanel(QtWidgets.QWidget):
         type_ = None if type_text.startswith('(') else type_text
         perm_write = self._perm_write.isChecked()
 
-        self._save_btn.setEnabled(False)
-        self._save_btn.setText("Saving…")
-
         is_edit = bool(self._policy)
 
         if self.api_queue:
@@ -285,14 +282,11 @@ class TokenPolicyPanel(QtWidgets.QWidget):
                 action = f"Create policy for token {self._token_id}"
 
             def _on_done(success, result):
-                self._save_btn.setEnabled(True)
-                self._save_btn.setText("Save")
                 if success:
-                    self.slide_out()
                     self.save_done.emit()
                 else:
                     msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-                    self._error_label.setText(f"Error: {msg}")
+                    logger.error(f"Policy save failed: {msg}")
 
             item = QueueItem(
                 priority=PRIORITY_NORMAL,
@@ -304,12 +298,7 @@ class TokenPolicyPanel(QtWidgets.QWidget):
                 callback=_on_done,
             )
             self.api_queue.enqueue(item)
-
-            if self.api_queue.is_paused:
-                self._save_btn.setEnabled(True)
-                self._save_btn.setText("Save")
-                self._error_label.setText("Queued — will be sent when back online.")
-                self.slide_out()
+            self.slide_out()
         else:
             if is_edit:
                 success, result = self.api_client.update_token_policy(
@@ -1139,9 +1128,6 @@ class TokenManagerInterface(QtWidgets.QWidget):
         ]
         allowed_subnets = subnet_lines if subnet_lines else None
 
-        self._save_btn.setEnabled(False)
-        self._save_btn.setText("Saving…")
-
         update_kwargs = dict(
             name=name,
             perm_create_domain=self._edit_perm_create.isChecked(),
@@ -1155,8 +1141,6 @@ class TokenManagerInterface(QtWidgets.QWidget):
         token_id = self._current_token_id
 
         def _handle_result(success, result):
-            self._save_btn.setEnabled(True)
-            self._save_btn.setText("Save Changes")
             if success:
                 row = self._token_table.currentRow()
                 if row >= 0:
@@ -1182,14 +1166,7 @@ class TokenManagerInterface(QtWidgets.QWidget):
                 callback=_handle_result,
             )
             self.api_queue.enqueue(item)
-
-            if self.api_queue.is_paused:
-                self._save_btn.setEnabled(True)
-                self._save_btn.setText("Save Changes")
-                self._notify_drawer.info(
-                    "Queued",
-                    f"Token update queued — will be sent when back online.",
-                )
+            self._notify_drawer.info("Queued", f"Token '{name}' update queued.")
         else:
             success, result = self.api_client.update_token(token_id, **update_kwargs)
             _handle_result(success, result)

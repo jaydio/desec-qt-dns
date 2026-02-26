@@ -27,6 +27,8 @@ A PySide6 desktop application with Fluent Design for managing DNS zones and reco
 - **Expiration controls** — max age and max unused period
 - **Subnet restrictions** — limit token use to specific CIDR ranges
 
+> **Note:** The deSEC API grants every valid token full **read** access to all zones and records on the account. Token policies only restrict **write** operations (create, update, delete). There is no way to limit which zones a token can see.
+
 ### Import / Export
 - **Formats** — JSON (API-compatible), YAML (Infrastructure-as-Code), BIND zone files, djbdns/tinydns
 - **Bulk export** — export multiple zones to a single ZIP archive

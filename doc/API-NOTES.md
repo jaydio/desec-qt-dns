@@ -103,6 +103,15 @@ When the deSEC API returns HTTP 429 (Too Many Requests):
 | GET/POST/PATCH/DELETE | /auth/tokens/... | Token management |
 | GET/POST/PATCH/DELETE | /auth/tokens/{id}/policies/rrsets/... | Token policy management |
 
+## Token Permissions and Read Access
+
+The deSEC API grants every valid token full **read** access to all zones and RRsets on the account. Any token — regardless of its policy configuration — can enumerate all domains and read all DNS records. Token policies control **write** operations only (creating, updating, and deleting records). There is no mechanism in the deSEC API to restrict which zones or records a token can read.
+
+This means:
+- A token with an empty policy list can still list all zones and fetch all RRsets.
+- `perm_create_domain`, `perm_delete_domain`, and `perm_manage_tokens` control specific write actions.
+- RRset policies (`auto_policy` and per-token policy rules) restrict which domain/subname/type combinations the token can **write** to.
+
 ## Best Practices
 
 - Default rate limit (1.0 req/sec) is safe for normal usage.
