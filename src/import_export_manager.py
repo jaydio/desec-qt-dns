@@ -203,11 +203,16 @@ class ImportExportManager:
             zone_data = self.cache_manager.get_zone_by_name(zone_name)
             if not zone_data:
                 return False, f"Zone '{zone_name}' not found in cache"
-            
-            # Get records
+
+            # Get records — try cache first, fall back to API
             records, _ = self.cache_manager.get_cached_records(zone_name)
             if not records:
-                return False, f"No records found for zone '{zone_name}'"
+                success, api_records = self.api_client.get_records(zone_name)
+                if success and api_records:
+                    records = api_records
+                    self.cache_manager.cache_records(zone_name, records)
+                else:
+                    return False, f"No records found for zone '{zone_name}'"
             
             # Export based on format
             if format_type == 'json':
@@ -670,12 +675,17 @@ class ImportExportManager:
                     if not zone_data:
                         logger.warning(f"Zone {zone_name} not found in cache, skipping")
                         continue
-                    
-                    # Get records from cache
+
+                    # Get records — try cache first, fall back to API
                     records, _ = self.cache_manager.get_cached_records(zone_name)
                     if records is None:
-                        logger.warning(f"Records for zone {zone_name} not found in cache, skipping")
-                        continue
+                        success, api_records = self.api_client.get_records(zone_name)
+                        if success and api_records:
+                            records = api_records
+                            self.cache_manager.cache_records(zone_name, records)
+                        else:
+                            logger.warning(f"Records for zone {zone_name} not available, skipping")
+                            continue
                     
                     # Generate filename for this zone
                     zone_filename = self.generate_export_filename(zone_name, format_type)

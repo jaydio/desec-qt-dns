@@ -11,13 +11,14 @@ The application uses a FluentWindow with sidebar navigation. There is no menu ba
 | Item | Icon | Type |
 |------|------|------|
 | DNS | globe | Main page (zone list + records) |
-| Search & Replace | search | Global search/replace across zones |
+| DNSSEC | vpn | DNSSEC key overview (DS + DNSKEY) for any zone |
+| Search | search | Global search/replace across zones |
 | Import | right_arrow | Import records from file |
 | Export | left_arrow | Export records to file |
-| Tokens | certificate | API token management |
 | Queue | send_fill | Central API queue viewer |
 | History | update | Git-based version history |
 | Profile | people | Multi-profile management |
+| Tokens | certificate | API token management |
 | Settings | setting | Application settings |
 
 **Bottom items:**
@@ -54,7 +55,10 @@ Slide-in right panel (340px wide) for zone creation. Activated by clicking the A
 RecordWidget with a TableWidget. Columns: checkbox, Name, Type (colored by record type), TTL, Content, Actions.
 
 - Sort by any column header; third click returns to default name-ascending order
-- Real-time search/filter across all fields
+- **Main search** — real-time filter across name, type, and content (SearchLineEdit)
+- **Type filter** — dedicated field (≈ 90 px) that narrows by record type (e.g. "A", "MX")
+- **TTL filter** — dedicated field (≈ 80 px) that narrows by TTL value
+- All three filters are AND'd: a record must match every active filter to appear
 - Double-click a row to open the edit panel
 - Delete key on a selected row triggers deletion with DeleteConfirmDrawer
 
@@ -78,9 +82,39 @@ Slide-in right panel (440px wide) for adding and editing records.
 
 ---
 
-## Search & Replace Page
+## DNSSEC Page
 
-Accessible via the Search & Replace sidebar item.
+Accessible via the DNSSEC sidebar item.
+
+### Layout
+
+ScrollArea with one card group per zone key. Each zone key produces two cards:
+
+| Card | Content |
+|------|---------|
+| DS Format | All DS record variants for the key (SHA-256, SHA-384, etc.) — one per digest type, with the digest name labelled when multiple variants are present |
+| DNSKEY Format | The DNSKEY record for the key |
+
+Each card has a **Copy** button that copies the full record to the clipboard.
+
+### Usage
+
+1. Select a zone from the dropdown at the top.
+2. Click **Load** (or the zone auto-loads on selection).
+3. Card groups appear for each signing key returned by the API.
+4. Use the Copy button on any card to copy the record string.
+
+### Notes
+
+- DNSSEC data is fetched on-demand and never served from cache.
+- Zones that have no active signing keys display an informational message.
+- DS and DNSKEY records are auto-managed by deSEC; this page is read-only.
+
+---
+
+## Search Page
+
+Accessible via the Search sidebar item.
 
 ### Layout
 
@@ -175,8 +209,8 @@ Splitter: token list on the left, details tabs on the right (Details + Policies)
 
 ### Policies Tab
 
-- Lists fine-grained RRset access rules: domain, subname, type, write flag
-- Add Policy / Edit Policy / Delete Policy controls
+- Lists fine-grained RRset access rules: domain, subname, type, write flag; table is sortable by any column
+- Add Policy / Edit Policy / **Delete Policy (N)** — button shows count of selected policies
 
 ### CreateTokenPanel
 
@@ -309,10 +343,20 @@ All confirmations and notifications use top-sliding drawers instead of QMessageB
 - Two-step confirmation
 - Used for general confirmations (quit application, switch profile, import records, apply replacements)
 
-### NotifyDrawer
+---
 
-- Supports info, warning, error, and success variants
-- Used for non-blocking notifications
+## InfoBar Toasts
+
+All API operation results are surfaced as auto-dismissing InfoBar toasts anchored to the top-centre of the main window (`parent=self.window()`).
+
+| Variant | Colour | Duration | When used |
+|---------|--------|----------|-----------|
+| `success` | Green | 4 s | Operation completed |
+| `info` | Blue | 3 s | Neutral status update |
+| `warning` | Amber | 5 s | Non-fatal issue |
+| `error` | Red | 8 s | Operation failed |
+
+Toasts appear over every page and are triggered by queue callbacks, direct API responses, and local guard conditions (e.g. offline mode, missing permissions). They dismiss automatically and require no user interaction.
 
 ---
 

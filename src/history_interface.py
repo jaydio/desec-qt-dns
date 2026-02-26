@@ -41,7 +41,7 @@ class HistoryInterface(QtWidgets.QWidget):
         self._history = []
         self._setup_ui()
         self._restore_drawer = RestoreConfirmDrawer(parent=self)
-        self._delete_drawer = DeleteConfirmDrawer(parent=self)
+        self._delete_drawer = DeleteConfirmDrawer(parent=self._left_widget)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -53,7 +53,7 @@ class HistoryInterface(QtWidgets.QWidget):
         if hasattr(self, '_restore_drawer'):
             self._restore_drawer.reposition(event.size())
         if hasattr(self, '_delete_drawer'):
-            self._delete_drawer.reposition(event.size())
+            self._delete_drawer.reposition(self._left_widget.size())
 
     # ------------------------------------------------------------------
     # UI construction
@@ -70,7 +70,7 @@ class HistoryInterface(QtWidgets.QWidget):
         outer.addWidget(splitter, 1)
 
         # ── Left pane: zone list ──────────────────────────────────────
-        left = QtWidgets.QWidget()
+        self._left_widget = left = QtWidgets.QWidget()
         left.setMinimumWidth(220)
         left_lay = QtWidgets.QVBoxLayout(left)
         left_lay.setContentsMargins(6, 6, 6, 6)
@@ -165,7 +165,7 @@ class HistoryInterface(QtWidgets.QWidget):
 
     def _refresh_zones(self):
         self._zone_list.clear()
-        zones = self._vm.list_versioned_zones()
+        zones = sorted(self._vm.list_versioned_zones(), key=str.lower)
         for z in zones:
             self._zone_list.addItem(z)
         self._zone_count_label.setText(f"{len(zones)} zone{'s' if len(zones) != 1 else ''}")

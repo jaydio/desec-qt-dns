@@ -9,15 +9,16 @@ A PySide6 desktop application with Fluent Design for managing DNS zones and reco
 ## Features
 
 ### DNS Management
-- **Zone management** — create and delete DNS zones; zone list shows `Total zones: N/limit` using your account's domain quota fetched live from the API
-- **Record management** — full CRUD for 37 DNS record types with format hints, examples, and inline validation via a slide-in edit panel
+- **Zone management** — create and delete DNS zones; zone list sorted alphabetically; header shows `Total zones: N/limit` using your account's domain quota fetched live from the API
+- **Record management** — full CRUD for 38+ DNS record types with format hints, examples, and inline validation via a slide-in edit panel
+- **DNSSEC overview** — dedicated sidebar page showing DS and DNSKEY records for any zone, with one-click copy and RFC-standard formatting
 - **Batch actions** — select multiple records with checkboxes, then bulk-delete with one click; Select All / Select None shortcuts
 - **Multiline records** — enter multiple values per RRset (one per line); configurable display in Settings
 - **Version history** — Git-based zone versioning with snapshot, timeline browse, and one-click restore
 
 ### Search & Organisation
 - **Global Search & Replace** — search records across all zones by subname, type, content, TTL, or zone name (plain text or regex); bulk-replace content, rename subnames, update TTLs, delete records, or export results — with a full change log
-- **Record filtering** — real-time search within a zone across all fields
+- **Record filtering** — real-time search across name, type, and content; dedicated Type and TTL filter fields for precise narrowing; all filters AND'd together
 - **Sortable table** — click any column header to sort; third click returns to default
 
 ### Token Management
@@ -52,6 +53,7 @@ A PySide6 desktop application with Fluent Design for managing DNS zones and reco
 - Light, Dark, and Auto (follow OS) theme modes
 - Slide-in panels for all forms (records, zones, tokens, profiles) — no popup dialogs
 - Two-step confirmation drawers for destructive actions
+- **InfoBar toasts** — auto-dismissing colour-coded notifications (success, warning, error, info) for all API operations
 - Log console sidebar page with colour-coded severity
 
 ### Performance & Reliability
@@ -74,7 +76,7 @@ deSEC auto-manages DNSSEC records server-side:
 
 ---
 
-## Supported Record Types (37)
+## Supported Record Types (38+)
 
 `A` `AAAA` `AFSDB` `APL` `CAA` `CDNSKEY` `CERT` `CNAME` `DHCID` `DNAME` `DNSKEY` `DLV` `DS` `EUI48` `EUI64` `HINFO` `HTTPS` `KX` `L32` `L64` `LOC` `LP` `MX` `NAPTR` `NID` `NS` `OPENPGPKEY` `PTR` `RP` `SMIMEA` `SPF` `SRV` `SSHFP` `SVCB` `TLSA` `TXT` `URI`
 

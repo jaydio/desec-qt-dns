@@ -15,9 +15,9 @@ from qfluentwidgets import (
     ScrollArea, SettingCard, SettingCardGroup, PushSettingCard,
     FluentIcon, LineEdit, SpinBox, DoubleSpinBox,
     SwitchButton, PrimaryPushButton, LargeTitleLabel,
+    InfoBar, InfoBarPosition,
 )
 from fluent_styles import SCROLL_AREA_QSS, container_qss, combo_qss
-from notify_drawer import NotifyDrawer
 
 logger = logging.getLogger(__name__)
 
@@ -125,12 +125,6 @@ class SettingsInterface(ScrollArea):
         self.setObjectName("settingsInterface")
         self._build_ui()
         self._load_values()
-        self._notify_drawer = NotifyDrawer(parent=self)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, '_notify_drawer'):
-            self._notify_drawer.reposition(event.size())
 
     # ── UI construction ───────────────────────────────────────────────────────
 
@@ -311,7 +305,13 @@ class SettingsInterface(ScrollArea):
         """Validate inputs and persist settings; emit settings_applied on success."""
         api_url = self._api_url_card.line_edit.text().strip()
         if not api_url:
-            self._notify_drawer.warning("Invalid API URL", "Please enter a valid API URL.")
+            InfoBar.warning(
+                title="Invalid API URL",
+                content="Please enter a valid API URL.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         self.config_manager.set_api_url(api_url)

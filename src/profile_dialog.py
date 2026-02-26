@@ -14,10 +14,10 @@ from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
 from qfluentwidgets import (
     PushButton, PrimaryPushButton, ListWidget, LineEdit,
     LargeTitleLabel, SubtitleLabel, isDarkTheme,
+    InfoBar, InfoBarPosition,
 )
 from fluent_styles import container_qss
 from confirm_drawer import DeleteConfirmDrawer, ConfirmDrawer
-from notify_drawer import NotifyDrawer
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,6 @@ class ProfileInterface(QtWidgets.QWidget):
         # Drawers (parent=self so they overlay this page)
         self._delete_drawer = DeleteConfirmDrawer(parent=self)
         self._confirm_drawer = ConfirmDrawer(parent=self)
-        self._notify_drawer = NotifyDrawer(parent=self)
 
         # Slide-in form panel (parent=self so it overlays this page)
         self._form_panel = ProfileFormPanel(self.profile_manager, parent=self)
@@ -328,8 +327,6 @@ class ProfileInterface(QtWidgets.QWidget):
             self._delete_drawer.reposition(event.size())
         if hasattr(self, '_confirm_drawer'):
             self._confirm_drawer.reposition(event.size())
-        if hasattr(self, '_notify_drawer'):
-            self._notify_drawer.reposition(event.size())
         if hasattr(self, '_form_panel'):
             self._form_panel.reposition(event.size())
 
@@ -523,8 +520,13 @@ class ProfileInterface(QtWidgets.QWidget):
         profile_name = profile_data["name"]
 
         if profile_data["is_current"]:
-            self._notify_drawer.info("Already Current",
-                                     f"'{profile_data['display_name']}' is already the current profile.")
+            InfoBar.info(
+                title="Already Current",
+                content=f"'{profile_data['display_name']}' is already the current profile.",
+                parent=self.window(),
+                duration=3000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         display = profile_data["display_name"]
@@ -533,12 +535,22 @@ class ProfileInterface(QtWidgets.QWidget):
             success = self.profile_manager.switch_to_profile(profile_name)
             if success:
                 self.profile_switched.emit(profile_name)
-                self._notify_drawer.success("Profile Switched",
-                                            f"Successfully switched to '{display}'.")
+                InfoBar.success(
+                    title="Profile Switched",
+                    content=f"Successfully switched to '{display}'.",
+                    parent=self.window(),
+                    duration=4000,
+                    position=InfoBarPosition.TOP,
+                )
                 self.refresh_profiles()
             else:
-                self._notify_drawer.error("Switch Failed",
-                                          f"Failed to switch to profile '{display}'.")
+                InfoBar.error(
+                    title="Switch Failed",
+                    content=f"Failed to switch to profile '{display}'.",
+                    parent=self.window(),
+                    duration=8000,
+                    position=InfoBarPosition.TOP,
+                )
 
         self._confirm_drawer.ask(
             title="Switch Profile",
@@ -557,14 +569,23 @@ class ProfileInterface(QtWidgets.QWidget):
         profile_name = profile_data["name"]
 
         if profile_name == self.profile_manager.DEFAULT_PROFILE_NAME:
-            self._notify_drawer.warning("Cannot Delete",
-                                        "The default profile cannot be deleted.")
+            InfoBar.warning(
+                title="Cannot Delete",
+                content="The default profile cannot be deleted.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         if profile_data["is_current"]:
-            self._notify_drawer.warning("Cannot Delete",
-                                        "Cannot delete the currently active profile. "
-                                        "Switch to another profile first.")
+            InfoBar.warning(
+                title="Cannot Delete",
+                content="Cannot delete the currently active profile. Switch to another profile first.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         def _do_delete():
@@ -572,8 +593,13 @@ class ProfileInterface(QtWidgets.QWidget):
             if success:
                 self.refresh_profiles()
             else:
-                self._notify_drawer.error("Delete Failed",
-                                          f"Failed to delete profile '{profile_data['display_name']}'.")
+                InfoBar.error(
+                    title="Delete Failed",
+                    content=f"Failed to delete profile '{profile_data['display_name']}'.",
+                    parent=self.window(),
+                    duration=8000,
+                    position=InfoBarPosition.TOP,
+                )
 
         self._delete_drawer.ask(
             title="Delete Profile",

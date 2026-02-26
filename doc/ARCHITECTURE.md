@@ -20,7 +20,7 @@ drawers instead of traditional dialog popups.
 | **Serialisation** | PyYAML, json, pickle |
 | **Versioning** | git (CLI, invoked by `version_manager.py`) |
 
-## Source Modules (25 files)
+## Source Modules (26 files)
 
 | Module | Role |
 |--------|------|
@@ -36,6 +36,7 @@ drawers instead of traditional dialog popups.
 | `workers.py` | Background QRunnable workers (fallback when `api_queue` is unavailable) |
 | `zone_list_widget.py` | ZoneListModel + ZoneListWidget + AddZonePanel slide-in |
 | `record_widget.py` | RecordWidget + RecordEditPanel slide-in (440 px) + BulkDeleteWorker + validation |
+| `dnssec_interface.py` | DnssecInterface sidebar page — DS + DNSKEY card view per zone, fetched on demand |
 | `search_replace_dialog.py` | SearchReplaceInterface sidebar page + SearchWorker |
 | `token_manager_dialog.py` | TokenManagerInterface sidebar page + CreateTokenPanel + TokenPolicyPanel + TokenSecretDialog |
 | `import_export_dialog.py` | ExportInterface + ImportInterface sidebar pages |
@@ -47,7 +48,7 @@ drawers instead of traditional dialog popups.
 | `log_widget.py` | In-window log console, colour-coded severity |
 | `fluent_styles.py` | Shared QSS constants (`CONTAINER_QSS`, `COMBO_QSS`, `SCROLL_AREA_QSS`, `SPLITTER_QSS`) |
 | `confirm_drawer.py` | Top-sliding two-step drawers: DeleteConfirmDrawer (red), RestoreConfirmDrawer (amber), ConfirmDrawer (blue) |
-| `notify_drawer.py` | Top-sliding notification drawer (error / warning / info / success) |
+| `notify_drawer.py` | Retained for reference; superseded by `InfoBar` toasts for all notifications |
 | `auth_dialog.py` | Legacy token entry dialog (unused; retained for reference, can be removed) |
 
 ## Core Components
@@ -124,8 +125,8 @@ Sidebar layout:
 
 | Position | Items |
 |----------|-------|
-| **Top** | DNS (globe), Search and Replace (search), Import (right arrow), Export (left arrow), Tokens (certificate), Queue (send), History (update) |
-| **Bottom** | Profile (people), Settings (setting), About (info), Log Console (history), Sync (sync), Connection Status (wifi), Last Sync (history) |
+| **Top** | DNS (globe), DNSSEC (vpn), Search (search), Import (right arrow), Export (left arrow), Queue (send), History (update), Profile (people), Tokens (certificate), Settings (setting) |
+| **Bottom** | About (info), Log Console (history), Sync (sync), Connection Status (wifi), Last Sync (history) |
 
 The sidebar expanded width is 180 px (`self.navigationInterface.setExpandWidth(180)`).
 
@@ -151,14 +152,15 @@ Two categories of drawers slide down from the top of the window:
 | `confirm_drawer.py` | `DeleteConfirmDrawer` | Red | Two-step confirmation for destructive deletes |
 | `confirm_drawer.py` | `RestoreConfirmDrawer` | Amber | Two-step confirmation for version restores |
 | `confirm_drawer.py` | `ConfirmDrawer` | Blue | Generic two-step confirmation |
-| `notify_drawer.py` | `NotifyDrawer` | Varies | Transient notifications (error, warning, info, success) |
 
-These drawers replace all former `QMessageBox` confirmation and notification
-popups with animated, contextual overlays.
+Transient notifications (success, warning, error, info) are handled by
+`qfluentwidgets.InfoBar` toasts anchored to the top-centre of the main window
+(`parent=self.window()`). They auto-dismiss after a type-dependent duration
+(3–8 s) and require no user interaction.
 
 #### Zone List (`zone_list_widget.py`)
 
-- `ZoneListModel` (`QAbstractListModel`) for efficient virtual rendering
+- `ZoneListModel` (`QAbstractListModel`) for efficient virtual rendering; zones sorted alphabetically by name
 - `SearchLineEdit` for real-time filtering (built-in search icon)
 - `AddZonePanel` slide-in for zone creation
 - Account domain limit: `"Total zones: N/limit"` displayed in the header
@@ -167,6 +169,7 @@ popups with animated, contextual overlays.
 
 - Sortable `TableWidget` with columns: check, Name, Type, TTL, Content, Actions
 - Checkbox column uses native `CheckBox` via `setCellWidget`
+- **Filtering**: main `SearchLineEdit` (name / type / content) + dedicated Type filter (≈ 90 px) + TTL filter (≈ 80 px); all three AND'd via `_apply_filters()`
 - **Batch actions**: Select All, Select None, Delete Selected (N) with `DeleteConfirmDrawer`
 - `BulkDeleteWorker(QThread)` runs deletes in background with per-record logging
 - Per-row Edit / Delete buttons plus Delete-key single-record deletion
@@ -177,6 +180,14 @@ popups with animated, contextual overlays.
 - `_validate_record_content` module-level helper for content validation
 - All mutations are enqueued through `api_queue` (PRIORITY_NORMAL); callbacks
   trigger `version_manager.snapshot()`, cache clear, and table refresh
+
+#### DNSSEC Overview (`dnssec_interface.py`)
+
+- `DnssecInterface` sidebar page
+- Zone selector dropdown; data fetched on demand via `api_queue` (never cached)
+- Renders one card group per signing key: **DS Format** card (all digest variants with type labels) and **DNSKEY Format** card
+- Multiple DS digest types (SHA-256 / SHA-384) are shown within a single DS card with bold digest-name labels
+- Copy button per card; `InfoBar` toast on fetch failure
 
 #### Global Search and Replace (`search_replace_dialog.py`)
 
@@ -320,8 +331,8 @@ that previously appeared in four separate files.
 
 1. `api_client._make_request` catches and categorises HTTP errors; returns
    `(success, data_or_message)` tuples.
-2. The UI shows user-friendly notifications via `NotifyDrawer`; details are logged
-   to the log console.
+2. The UI shows user-friendly notifications via `InfoBar` toasts (top-centre,
+   auto-dismiss); details are also written to the log console.
 3. Bulk operations (import, bulk delete, search and replace) continue on per-record
    failures; a summary is logged on completion.
 4. Rate-limit errors (429) are handled automatically by the central queue with

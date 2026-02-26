@@ -12,9 +12,9 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtCore import Qt, QTimer, QThreadPool, QRunnable, QObject, Signal, QPropertyAnimation, QEasingCurve
 from qfluentwidgets import (PushButton, PrimaryPushButton, LineEdit, CheckBox,
                              PlainTextEdit, TableWidget, StrongBodyLabel, CaptionLabel,
-                             isDarkTheme, SubtitleLabel)
+                             isDarkTheme, SubtitleLabel,
+                             InfoBar, InfoBarPosition)
 from fluent_styles import container_qss, SPLITTER_QSS
-from notify_drawer import NotifyDrawer
 from api_queue import QueueItem, PRIORITY_NORMAL
 
 logger = logging.getLogger(__name__)
@@ -287,6 +287,13 @@ class TokenPolicyPanel(QtWidgets.QWidget):
                 else:
                     msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
                     logger.error(f"Policy save failed: {msg}")
+                    InfoBar.error(
+                        title="Policy Save Failed",
+                        content=msg,
+                        parent=self.window(),
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
 
             item = QueueItem(
                 priority=PRIORITY_NORMAL,
@@ -538,6 +545,13 @@ class CreateTokenPanel(QtWidgets.QWidget):
                 else:
                     msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
                     self._error_label.setText(f"Error: {msg}")
+                    InfoBar.error(
+                        title="Token Creation Failed",
+                        content=msg,
+                        parent=self.window(),
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
 
             item = QueueItem(
                 priority=PRIORITY_NORMAL,
@@ -568,6 +582,13 @@ class CreateTokenPanel(QtWidgets.QWidget):
             else:
                 msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
                 self._error_label.setText(f"Error: {msg}")
+                InfoBar.error(
+                    title="Token Creation Failed",
+                    content=msg,
+                    parent=self.window(),
+                    duration=8000,
+                    position=InfoBarPosition.TOP,
+                )
 
     def _on_cancel(self):
         self.slide_out()
@@ -756,7 +777,7 @@ class TokenManagerInterface(QtWidgets.QWidget):
         splitter.addWidget(right_widget)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
-        splitter.setSizes([340, 760])
+        splitter.setSizes([830, 760])
 
         # Initially show placeholder in both tabs
         self._set_detail_enabled(False)
@@ -774,9 +795,6 @@ class TokenManagerInterface(QtWidgets.QWidget):
         # Delete confirmation drawer (slides from top, scoped to left panel)
         from confirm_drawer import DeleteConfirmDrawer
         self._delete_drawer = DeleteConfirmDrawer(parent=self._left_widget)
-
-        # Notification drawer (slides from top, full page width)
-        self._notify_drawer = NotifyDrawer(parent=self)
 
     def _build_details_tab(self):
         """Build and return the Details tab widget."""
@@ -922,6 +940,8 @@ class TokenManagerInterface(QtWidgets.QWidget):
                 col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
             )
         self._policy_table.setAlternatingRowColors(True)
+        self._policy_table.setSortingEnabled(True)
+        self._policy_table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self._policy_table.selectionModel().selectionChanged.connect(
             self._on_policy_selection_changed
         )
@@ -1014,16 +1034,23 @@ class TokenManagerInterface(QtWidgets.QWidget):
 
         if not success:
             msg = data.get('message', str(data)) if isinstance(data, dict) else str(data)
-            self._notify_drawer.error("Load Failed", f"Could not load tokens:\n{msg}")
+            InfoBar.error(
+                title="Load Failed",
+                content=f"Could not load tokens:\n{msg}",
+                parent=self.window(),
+                duration=8000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         tokens = data if isinstance(data, list) else []
         if tokens and self.cache_manager:
             self.cache_manager.cache_tokens(tokens)
         self._token_count_label.setText(f"Total tokens: {len(tokens)}")
+        self._token_table.setSortingEnabled(False)
         self._token_table.setRowCount(0)
 
-        for token in tokens:
+        for token in sorted(tokens, key=lambda t: (t.get('name') or '').lower()):
             row = self._token_table.rowCount()
             self._token_table.insertRow(row)
 
@@ -1045,6 +1072,9 @@ class TokenManagerInterface(QtWidgets.QWidget):
                 "M = perm_manage_tokens"
             )
             self._token_table.setItem(row, 3, perm_item)
+
+        self._token_table.setSortingEnabled(True)
+        self._token_table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
 
     # ------------------------------------------------------------------
     # Token table selection
@@ -1116,7 +1146,13 @@ class TokenManagerInterface(QtWidgets.QWidget):
 
         name = self._edit_name.text().strip()
         if not name:
-            self._notify_drawer.warning("Missing Name", "Token name cannot be empty.")
+            InfoBar.warning(
+                title="Missing Name",
+                content="Token name cannot be empty.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         max_age = self._edit_max_age.text().strip() or None
@@ -1153,7 +1189,13 @@ class TokenManagerInterface(QtWidgets.QWidget):
                             perm_item.setText(_perm_flags(result))
             else:
                 msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-                self._notify_drawer.error("Save Failed", f"Failed to save token:\n{msg}")
+                InfoBar.error(
+                    title="Save Failed",
+                    content=f"Failed to save token:\n{msg}",
+                    parent=self.window(),
+                    duration=8000,
+                    position=InfoBarPosition.TOP,
+                )
 
         if self.api_queue:
             item = QueueItem(
@@ -1166,7 +1208,13 @@ class TokenManagerInterface(QtWidgets.QWidget):
                 callback=_handle_result,
             )
             self.api_queue.enqueue(item)
-            self._notify_drawer.info("Queued", f"Token '{name}' update queued.")
+            InfoBar.info(
+                title="Queued",
+                content=f"Token '{name}' update queued.",
+                parent=self.window(),
+                duration=3000,
+                position=InfoBarPosition.TOP,
+            )
         else:
             success, result = self.api_client.update_token(token_id, **update_kwargs)
             _handle_result(success, result)
@@ -1228,7 +1276,13 @@ class TokenManagerInterface(QtWidgets.QWidget):
                             self._set_detail_enabled(False)
                             self._set_policies_enabled(False)
                             if errors_list:
-                                self._notify_drawer.error("Delete Failed", "\n".join(errors_list))
+                                InfoBar.error(
+                                    title="Delete Failed",
+                                    content="\n".join(errors_list),
+                                    parent=self.window(),
+                                    duration=8000,
+                                    position=InfoBarPosition.TOP,
+                                )
                     return _cb
 
                 for token in tokens_to_delete:
@@ -1253,7 +1307,13 @@ class TokenManagerInterface(QtWidgets.QWidget):
                 self._set_detail_enabled(False)
                 self._set_policies_enabled(False)
                 if errors:
-                    self._notify_drawer.error("Delete Failed", "\n".join(errors))
+                    InfoBar.error(
+                        title="Delete Failed",
+                        content="\n".join(errors),
+                        parent=self.window(),
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
 
         self._delete_drawer.ask(
             title="Delete Token" if count == 1 else f"Delete {count} Tokens",
@@ -1311,6 +1371,7 @@ class TokenManagerInterface(QtWidgets.QWidget):
         self._policies = data if isinstance(data, list) else []
         if self._policies and self.cache_manager and token_id:
             self.cache_manager.cache_token_policies(token_id, self._policies)
+        self._policy_table.setSortingEnabled(False)
         self._policy_table.setRowCount(0)
 
         for policy in self._policies:
@@ -1343,6 +1404,8 @@ class TokenManagerInterface(QtWidgets.QWidget):
                 write_item.setForeground(QtGui.QColor('#66BB6A' if isDarkTheme() else '#2e7d32'))
             self._policy_table.setItem(row, 3, write_item)
 
+        self._policy_table.setSortingEnabled(True)
+
     # ------------------------------------------------------------------
     # Policy table selection
     # ------------------------------------------------------------------
@@ -1351,6 +1414,9 @@ class TokenManagerInterface(QtWidgets.QWidget):
         selected_rows = len(set(idx.row() for idx in self._policy_table.selectedIndexes()))
         self._edit_policy_btn.setEnabled(selected_rows == 1)
         self._delete_policy_btn.setEnabled(selected_rows > 0)
+        self._delete_policy_btn.setText(
+            f"Delete Policy ({selected_rows})" if selected_rows > 0 else "Delete Policy"
+        )
 
     def _get_selected_policy(self):
         row = self._policy_table.currentRow()
@@ -1415,7 +1481,13 @@ class TokenManagerInterface(QtWidgets.QWidget):
                         if pending <= 0:
                             self._load_policies(token_id)
                             if errors_list:
-                                self._notify_drawer.error("Delete Failed", "\n".join(errors_list))
+                                InfoBar.error(
+                                    title="Delete Failed",
+                                    content="\n".join(errors_list),
+                                    parent=self.window(),
+                                    duration=8000,
+                                    position=InfoBarPosition.TOP,
+                                )
                     return _cb
 
                 for policy in policies_to_delete:
@@ -1439,7 +1511,13 @@ class TokenManagerInterface(QtWidgets.QWidget):
                         errors.append(msg)
                 self._load_policies(token_id)
                 if errors:
-                    self._notify_drawer.error("Delete Failed", "\n".join(errors))
+                    InfoBar.error(
+                        title="Delete Failed",
+                        content="\n".join(errors),
+                        parent=self.window(),
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
 
         self._delete_drawer.ask(
             title=f"Delete {'Policy' if count == 1 else f'{count} Policies'}",
@@ -1457,8 +1535,6 @@ class TokenManagerInterface(QtWidgets.QWidget):
             self._create_panel.reposition(event.size())
         if hasattr(self, '_delete_drawer'):
             self._delete_drawer.reposition(self._left_widget.size())
-        if hasattr(self, '_notify_drawer'):
-            self._notify_drawer.reposition(event.size())
 
 
 # ---------------------------------------------------------------------------

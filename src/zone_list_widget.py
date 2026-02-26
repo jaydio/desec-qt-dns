@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, Signal, QThreadPool, QObject, QPropertyAnimation,
 from qfluentwidgets import (
     PushButton, PrimaryPushButton, SearchLineEdit, ListView, LineEdit,
     isDarkTheme, SubtitleLabel, StrongBodyLabel, CaptionLabel,
+    InfoBar, InfoBarPosition,
 )
 
 from fluent_styles import container_qss
@@ -71,7 +72,7 @@ class ZoneListModel(QtCore.QAbstractListModel):
             zones: List of zone dictionaries
         """
         self.beginResetModel()
-        self.zones = zones
+        self.zones = sorted(zones, key=lambda z: z.get('name', '').lower())
         # Clear the zone name cache when updating zones
         self._zone_name_cache.clear()
         self.apply_filter()
@@ -545,11 +546,25 @@ class ZoneListWidget(QtWidgets.QWidget):
         except Exception as e:
             self.log_message.emit(f"Failed to open DNSSEC validation: {str(e)}", "error")
             logger.error(f"Failed to open DNSSEC validation: {e}")
+            InfoBar.error(
+                title="Could Not Open Browser",
+                content=str(e),
+                parent=self.window(),
+                duration=8000,
+                position=InfoBarPosition.TOP,
+            )
 
     def show_add_zone_dialog(self):
         """Signal that the user wants to add a zone (DnsInterface hosts the panel)."""
         if not self._edit_enabled:
             self.log_message.emit("Cannot add zone in offline mode", "warning")
+            InfoBar.warning(
+                title="Offline",
+                content="Cannot add zone in offline mode.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
         self.add_zone_requested.emit()
 
@@ -569,9 +584,23 @@ class ZoneListWidget(QtWidgets.QWidget):
             def _on_done(success, data):
                 if success:
                     self.log_message.emit(f"Zone {zone_name} added successfully", "success")
+                    InfoBar.success(
+                        title="Zone Added",
+                        content=f"'{zone_name}' created successfully.",
+                        parent=self.window(),
+                        duration=4000,
+                        position=InfoBarPosition.TOP,
+                    )
                     self.zone_added.emit()
                 else:
                     self.log_message.emit(f"Failed to add zone: {data}", "error")
+                    InfoBar.error(
+                        title="Add Zone Failed",
+                        content=str(data),
+                        parent=self.window(),
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
 
             item = QueueItem(
                 priority=PRIORITY_NORMAL,
@@ -586,9 +615,23 @@ class ZoneListWidget(QtWidgets.QWidget):
             success, response = self.api_client.create_zone(zone_name)
             if success:
                 self.log_message.emit(f"Zone {zone_name} added successfully", "success")
+                InfoBar.success(
+                    title="Zone Added",
+                    content=f"'{zone_name}' created successfully.",
+                    parent=self.window(),
+                    duration=4000,
+                    position=InfoBarPosition.TOP,
+                )
                 self.zone_added.emit()
             else:
                 self.log_message.emit(f"Failed to add zone: {response}", "error")
+                InfoBar.error(
+                    title="Add Zone Failed",
+                    content=str(response),
+                    parent=self.window(),
+                    duration=8000,
+                    position=InfoBarPosition.TOP,
+                )
 
     def _on_selection_changed(self):
         """Update button state and counter when zone selection changes."""
@@ -608,6 +651,13 @@ class ZoneListWidget(QtWidgets.QWidget):
         """Delete all selected zones after confirmation via top-sliding drawer."""
         if not self._edit_enabled:
             self.log_message.emit("Cannot delete zones in offline mode", "warning")
+            InfoBar.warning(
+                title="Offline",
+                content="Cannot delete zones in offline mode.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         zones = self._get_selected_zone_names()
@@ -641,10 +691,24 @@ class ZoneListWidget(QtWidgets.QWidget):
                     def _cb(success, data):
                         if success:
                             self.log_message.emit(f"Zone {zname} deleted successfully", "success")
+                            InfoBar.success(
+                                title="Zone Deleted",
+                                content=f"'{zname}' deleted.",
+                                parent=self.window(),
+                                duration=4000,
+                                position=InfoBarPosition.TOP,
+                            )
                             self.cache_manager.clear_domain_cache(zname)
                             self._remove_zone_from_model(zname)
                         else:
                             self.log_message.emit(f"Failed to delete zone: {data}", "error")
+                            InfoBar.error(
+                                title="Delete Failed",
+                                content=str(data),
+                                parent=self.window(),
+                                duration=8000,
+                                position=InfoBarPosition.TOP,
+                            )
                         pending[0] -= 1
                         if pending[0] <= 0:
                             self.zone_deleted.emit()
@@ -738,6 +802,13 @@ class ZoneListWidget(QtWidgets.QWidget):
         # Only proceed if editing is enabled (not in offline mode)
         if not self._edit_enabled:
             self.log_message.emit("Editing zones is disabled in offline mode", "warning")
+            InfoBar.warning(
+                title="Offline",
+                content="Editing zones is disabled in offline mode.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         # Get the zone name from the model
@@ -768,12 +839,26 @@ class ZoneListWidget(QtWidgets.QWidget):
             def _on_done(success, data):
                 if success:
                     self.log_message.emit(f"Zone {zone_name} deleted successfully", "success")
+                    InfoBar.success(
+                        title="Zone Deleted",
+                        content=f"'{zone_name}' deleted.",
+                        parent=self.window(),
+                        duration=4000,
+                        position=InfoBarPosition.TOP,
+                    )
                     self.cache_manager.clear_domain_cache(zone_name)
                     self._remove_zone_from_model(zone_name)
                     if not quiet:
                         self.zone_deleted.emit()
                 else:
                     self.log_message.emit(f"Failed to delete zone: {data}", "error")
+                    InfoBar.error(
+                        title="Delete Failed",
+                        content=str(data),
+                        parent=self.window(),
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
 
             item = QueueItem(
                 priority=PRIORITY_NORMAL,
@@ -788,8 +873,22 @@ class ZoneListWidget(QtWidgets.QWidget):
             success, response = self.api_client.delete_zone(zone_name)
             if success:
                 self.log_message.emit(f"Zone {zone_name} deleted successfully", "success")
+                InfoBar.success(
+                    title="Zone Deleted",
+                    content=f"'{zone_name}' deleted.",
+                    parent=self.window(),
+                    duration=4000,
+                    position=InfoBarPosition.TOP,
+                )
                 self.cache_manager.clear_domain_cache(zone_name)
                 if not quiet:
                     self.zone_deleted.emit()
             else:
                 self.log_message.emit(f"Failed to delete zone: {response}", "error")
+                InfoBar.error(
+                    title="Delete Failed",
+                    content=str(response),
+                    parent=self.window(),
+                    duration=8000,
+                    position=InfoBarPosition.TOP,
+                )

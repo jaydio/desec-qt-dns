@@ -16,10 +16,10 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import QFileDialog
 from qfluentwidgets import (PushButton, PrimaryPushButton, LineEdit, CheckBox,
                              ProgressBar, PlainTextEdit, TableWidget,
-                             StrongBodyLabel, CaptionLabel)
+                             StrongBodyLabel, CaptionLabel,
+                             InfoBar, InfoBarPosition)
 from fluent_styles import container_qss, SPLITTER_QSS
 from confirm_drawer import DeleteConfirmDrawer, ConfirmDrawer
-from notify_drawer import NotifyDrawer
 from api_queue import QueueItem, PRIORITY_NORMAL
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,6 @@ class SearchReplaceInterface(QtWidgets.QWidget):
         self._setup_ui()
         self._delete_drawer = DeleteConfirmDrawer(parent=self)
         self._confirm_drawer = ConfirmDrawer(parent=self)
-        self._notify_drawer = NotifyDrawer(parent=self)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -448,8 +447,6 @@ class SearchReplaceInterface(QtWidgets.QWidget):
             self._delete_drawer.reposition(event.size())
         if hasattr(self, '_confirm_drawer'):
             self._confirm_drawer.reposition(event.size())
-        if hasattr(self, '_notify_drawer'):
-            self._notify_drawer.reposition(event.size())
 
     # ------------------------------------------------------------------
     # Search
@@ -471,18 +468,26 @@ class SearchReplaceInterface(QtWidgets.QWidget):
                     try:
                         re.compile(text)
                     except re.error as e:
-                        self._notify_drawer.warning(
-                            "Invalid Regex",
-                            f"{label} filter contains an invalid regular expression:\n{e}"
+                        InfoBar.warning(
+                            title="Invalid Regex",
+                            content=f"{label} filter contains an invalid regular expression:\n{e}",
+                            parent=self.window(),
+                            duration=5000,
+                            position=InfoBarPosition.TOP,
                         )
                         return
                     # Reject patterns with nested quantifiers (ReDoS risk)
                     if re.search(r'[+*]\)?[+*]', text):
-                        self._notify_drawer.warning(
-                            "Unsafe Regex",
-                            f"{label} filter contains nested quantifiers (e.g. (a+)+) "
-                            f"which can cause catastrophic backtracking. "
-                            f"Please simplify the pattern."
+                        InfoBar.warning(
+                            title="Unsafe Regex",
+                            content=(
+                                f"{label} filter contains nested quantifiers (e.g. (a+)+) "
+                                f"which can cause catastrophic backtracking. "
+                                f"Please simplify the pattern."
+                            ),
+                            parent=self.window(),
+                            duration=5000,
+                            position=InfoBarPosition.TOP,
                         )
                         return
 
@@ -624,10 +629,22 @@ class SearchReplaceInterface(QtWidgets.QWidget):
     def _run_replace(self):
         items = self._checked_items()
         if not items:
-            self._notify_drawer.info("No Selection", "No rows are selected.")
+            InfoBar.info(
+                title="No Selection",
+                content="No rows are selected.",
+                parent=self.window(),
+                duration=3000,
+                position=InfoBarPosition.TOP,
+            )
             return
         if not self.api_queue or self.api_queue.is_paused:
-            self._notify_drawer.warning("Offline", "Cannot apply changes while offline.")
+            InfoBar.warning(
+                title="Offline",
+                content="Cannot apply changes while offline.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         content_find = self._find_edit.text()
@@ -636,9 +653,12 @@ class SearchReplaceInterface(QtWidgets.QWidget):
         new_ttl      = self._new_ttl_edit.text().strip()
 
         if not content_find and not new_sub and not new_ttl:
-            self._notify_drawer.warning(
-                "Nothing to Replace",
-                "Specify at least one replacement: content find, subname, or TTL."
+            InfoBar.warning(
+                title="Nothing to Replace",
+                content="Specify at least one replacement: content find, subname, or TTL.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
             )
             return
 
@@ -647,7 +667,13 @@ class SearchReplaceInterface(QtWidgets.QWidget):
             try:
                 int(new_ttl)
             except ValueError:
-                self._notify_drawer.warning("Invalid TTL", f"'{new_ttl}' is not a valid integer.")
+                InfoBar.warning(
+                    title="Invalid TTL",
+                    content=f"'{new_ttl}' is not a valid integer.",
+                    parent=self.window(),
+                    duration=5000,
+                    position=InfoBarPosition.TOP,
+                )
                 return
 
         # Capture items for use in the confirmation callback
@@ -794,10 +820,22 @@ class SearchReplaceInterface(QtWidgets.QWidget):
     def _run_delete(self):
         items = self._checked_items()
         if not items:
-            self._notify_drawer.info("No Selection", "No rows are selected.")
+            InfoBar.info(
+                title="No Selection",
+                content="No rows are selected.",
+                parent=self.window(),
+                duration=3000,
+                position=InfoBarPosition.TOP,
+            )
             return
         if not self.api_queue or self.api_queue.is_paused:
-            self._notify_drawer.warning("Offline", "Cannot delete records while offline.")
+            InfoBar.warning(
+                title="Offline",
+                content="Cannot delete records while offline.",
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         count = len(items)
@@ -878,7 +916,13 @@ class SearchReplaceInterface(QtWidgets.QWidget):
                 self._export_csv(path, rows)
             self._status_label.setText(f"Exported {len(rows)} record(s) to {path}")
         except Exception as e:
-            self._notify_drawer.error("Export Failed", f"Could not write file:\n{e}")
+            InfoBar.error(
+                title="Export Failed",
+                content=f"Could not write file:\n{e}",
+                parent=self.window(),
+                duration=8000,
+                position=InfoBarPosition.TOP,
+            )
 
     def _export_json(self, path, rows):
         data = [

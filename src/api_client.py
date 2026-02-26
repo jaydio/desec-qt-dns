@@ -289,6 +289,18 @@ class APIClient:
         """
         return self._make_request('GET', '/domains/')
     
+    def get_zone(self, name):
+        """
+        Get a single domain (zone) including DNSSEC key material.
+
+        Args:
+            name (str): Domain name
+
+        Returns:
+            tuple: (success, zone data dict or error message)
+        """
+        return self._make_request('GET', f'/domains/{name}/')
+
     def create_zone(self, name):
         """
         Create a new domain (zone).

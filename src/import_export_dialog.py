@@ -16,12 +16,12 @@ from PySide6.QtCore import Signal, QThread, Qt
 from import_export_manager import ImportExportManager
 from qfluentwidgets import (
     PushButton, PrimaryPushButton, ProgressBar, LineEdit, CheckBox,
-    TextEdit, StrongBodyLabel, CaptionLabel,
+    TextEdit, ListView, StrongBodyLabel, CaptionLabel,
+    InfoBar, InfoBarPosition,
 )
 import logging
 from fluent_styles import container_qss, SPLITTER_QSS
 from confirm_drawer import ConfirmDrawer
-from notify_drawer import NotifyDrawer
 
 logger = logging.getLogger(__name__)
 
@@ -74,15 +74,7 @@ class ExportInterface(QtWidgets.QWidget):
         self.import_export_manager = import_export_manager
         self.available_zones = available_zones or []
         self.worker = None
-        self.zone_checkboxes = []
-        self.zone_list_layout = None
         self.setup_ui()
-        self._notify_drawer = NotifyDrawer(parent=self)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, '_notify_drawer'):
-            self._notify_drawer.reposition(event.size())
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -120,28 +112,19 @@ class ExportInterface(QtWidgets.QWidget):
         title_row.addWidget(self._zone_count_label)
         left_lay.addLayout(title_row)
 
-        # Scrollable zone list with checkboxes
-        self.zone_list_scroll = QtWidgets.QScrollArea()
-        self.zone_list_scroll.setWidgetResizable(True)
-        self.zone_list_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: 1px solid rgba(128,128,128,0.2); }"
+        # Zone list view with Ctrl/Shift multi-select (no checkboxes)
+        self._zone_model = QtCore.QStringListModel(self.available_zones)
+        self._zone_list = ListView()
+        self._zone_list.setModel(self._zone_model)
+        self._zone_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
-
-        self.zone_list_widget = QtWidgets.QWidget()
-        self.zone_list_layout = QtWidgets.QVBoxLayout(self.zone_list_widget)
-        self.zone_list_layout.setSpacing(8)
-        self.zone_list_layout.setContentsMargins(10, 10, 10, 10)
-
-        self.zone_checkboxes = []
-        for zone in self.available_zones:
-            checkbox = CheckBox(zone)
-            self.zone_checkboxes.append(checkbox)
-            self.zone_list_layout.addWidget(checkbox)
-        self.zone_list_layout.addStretch()
-
-        self.zone_list_widget.setStyleSheet("background: transparent;")
-        self.zone_list_scroll.setWidget(self.zone_list_widget)
-        left_lay.addWidget(self.zone_list_scroll)
+        self._zone_list.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._zone_list.setAlternatingRowColors(True)
+        self._zone_list.selectionModel().selectionChanged.connect(self._update_export_btn)
+        left_lay.addWidget(self._zone_list)
 
         # Select all / none buttons
         btn_row = QtWidgets.QHBoxLayout()
@@ -234,31 +217,28 @@ class ExportInterface(QtWidgets.QWidget):
 
     def update_zones(self, available_zones):
         self.available_zones = available_zones or []
-        if self.zone_list_layout is not None:
-            while self.zone_list_layout.count():
-                item = self.zone_list_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
-        self.zone_checkboxes = []
-        for zone in self.available_zones:
-            checkbox = CheckBox(zone)
-            self.zone_checkboxes.append(checkbox)
-            self.zone_list_layout.addWidget(checkbox)
-        self.zone_list_layout.addStretch()
+        self._zone_model.setStringList(self.available_zones)
         self._zone_count_label.setText(
             f"{len(self.available_zones)} zone{'s' if len(self.available_zones) != 1 else ''}"
         )
 
     def select_all_zones(self):
-        for checkbox in self.zone_checkboxes:
-            checkbox.setChecked(True)
+        sel = self._zone_list.selectionModel()
+        model = self._zone_model
+        sel.select(
+            QtCore.QItemSelection(model.index(0), model.index(model.rowCount() - 1)),
+            QtCore.QItemSelectionModel.SelectionFlag.Select,
+        )
 
     def select_no_zones(self):
-        for checkbox in self.zone_checkboxes:
-            checkbox.setChecked(False)
+        self._zone_list.clearSelection()
 
     def get_selected_zones(self):
-        return [cb.text() for cb in self.zone_checkboxes if cb.isChecked()]
+        return [idx.data() for idx in self._zone_list.selectedIndexes()]
+
+    def _update_export_btn(self):
+        n = len(self._zone_list.selectedIndexes())
+        self.export_btn.setText(f"Export ({n})" if n > 0 else "Export")
 
     # ------------------------------------------------------------------
     # Export logic (unchanged)
@@ -387,11 +367,23 @@ class ExportInterface(QtWidgets.QWidget):
             self.status_label.clear()
 
     def show_success(self, message):
-        self._notify_drawer.success("Success", message)
+        InfoBar.success(
+            title="Success",
+            content=message,
+            parent=self.window(),
+            duration=4000,
+            position=InfoBarPosition.TOP,
+        )
         self.status_label.setText("Operation completed successfully.")
 
     def show_error(self, message):
-        self._notify_drawer.error("Error", message)
+        InfoBar.error(
+            title="Error",
+            content=message,
+            parent=self.window(),
+            duration=8000,
+            position=InfoBarPosition.TOP,
+        )
         self.status_label.setText("Operation failed.")
 
 
@@ -413,14 +405,11 @@ class ImportInterface(QtWidgets.QWidget):
         self.worker = None
         self.setup_ui()
         self._confirm_drawer = ConfirmDrawer(parent=self)
-        self._notify_drawer = NotifyDrawer(parent=self)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, '_confirm_drawer'):
             self._confirm_drawer.reposition(event.size())
-        if hasattr(self, '_notify_drawer'):
-            self._notify_drawer.reposition(event.size())
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -753,9 +742,21 @@ class ImportInterface(QtWidgets.QWidget):
             self.status_label.clear()
 
     def show_success(self, message):
-        self._notify_drawer.success("Success", message)
+        InfoBar.success(
+            title="Success",
+            content=message,
+            parent=self.window(),
+            duration=4000,
+            position=InfoBarPosition.TOP,
+        )
         self.status_label.setText("Operation completed successfully.")
 
     def show_error(self, message):
-        self._notify_drawer.error("Error", message)
+        InfoBar.error(
+            title="Error",
+            content=message,
+            parent=self.window(),
+            duration=8000,
+            position=InfoBarPosition.TOP,
+        )
         self.status_label.setText("Operation failed.")

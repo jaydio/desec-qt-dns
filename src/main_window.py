@@ -35,7 +35,6 @@ from token_manager_dialog import TokenManagerInterface
 from zone_list_widget import ZoneListWidget, AddZonePanel
 from fluent_styles import SPLITTER_QSS, container_qss
 from confirm_drawer import DeleteConfirmDrawer, ConfirmDrawer
-from notify_drawer import NotifyDrawer
 from record_widget import RecordWidget
 from log_widget import LogWidget
 from theme_manager import ThemeManager
@@ -43,6 +42,7 @@ from api_queue import APIQueue, QueueItem, PRIORITY_HIGH, PRIORITY_NORMAL, PRIOR
 from queue_interface import QueueInterface
 from version_manager import VersionManager
 from history_interface import HistoryInterface
+from dnssec_interface import DnssecInterface
 
 logger = logging.getLogger(__name__)
 
@@ -432,6 +432,11 @@ class MainWindow(FluentWindow):
             self.api_client, self.cache_manager, api_queue=self.api_queue
         )
 
+        self.dnssec_interface = DnssecInterface(
+            self.api_client, self.cache_manager, api_queue=self.api_queue
+        )
+        self.dnssec_interface.log_message.connect(self.log_message)
+
         self.token_manager_interface = TokenManagerInterface(
             self.api_client, api_queue=self.api_queue, cache_manager=self.cache_manager
         )
@@ -444,18 +449,14 @@ class MainWindow(FluentWindow):
 
         # ── Sidebar: Core workflow ──
         self.addSubInterface(self.dns_interface, FluentIcon.GLOBE, "DNS")
-        self.addSubInterface(self.search_replace_interface, FluentIcon.SEARCH, "Search & Replace")
+        self.addSubInterface(self.dnssec_interface, FluentIcon.VPN, "DNSSEC")
+        self.addSubInterface(self.search_replace_interface, FluentIcon.SEARCH, "Search")
 
         self.navigationInterface.addSeparator()
 
         # ── Sidebar: Data transfer ──
         self.addSubInterface(self.import_interface, FluentIcon.RIGHT_ARROW, "Import")
         self.addSubInterface(self.export_interface, FluentIcon.LEFT_ARROW, "Export")
-
-        self.navigationInterface.addSeparator()
-
-        # ── Sidebar: Account & config ──
-        self.addSubInterface(self.token_manager_interface, FluentIcon.CERTIFICATE, "Tokens")
 
         self.navigationInterface.addSeparator()
 
@@ -471,6 +472,7 @@ class MainWindow(FluentWindow):
 
         if self.profile_interface:
             self.addSubInterface(self.profile_interface, FluentIcon.PEOPLE, "Profile")
+        self.addSubInterface(self.token_manager_interface, FluentIcon.CERTIFICATE, "Tokens")
         self.addSubInterface(self.settings_interface, FluentIcon.SETTING, "Settings")
 
         # ── Sidebar: Bottom — info, log, status ──
@@ -533,9 +535,6 @@ class MainWindow(FluentWindow):
         # Auth panel — slide-in overlay for token entry (covers the full window)
         self._auth_panel = AuthPanel(self.config_manager, parent=self)
         self._auth_panel.token_saved.connect(self._on_token_saved)
-
-        # Notification drawer (slides from top, full window width)
-        self._notify_drawer = NotifyDrawer(parent=self)
 
         # Confirmation drawers (slides from top)
         self._delete_drawer = DeleteConfirmDrawer(parent=self)
@@ -712,18 +711,28 @@ class MainWindow(FluentWindow):
             self._enter_rate_limit_cooldown(retry_after)
 
             minutes = retry_after / 60
-            self._notify_drawer.warning(
-                "Daily Rate Limit Reached",
-                f"deSEC has throttled requests for ~{minutes:.0f} minutes.\n"
-                f"The app is now offline and will reconnect automatically.\n\n"
-                f"You can also reconnect manually via the sidebar.",
+            InfoBar.warning(
+                title="Daily Rate Limit Reached",
+                content=(
+                    f"deSEC has throttled requests for ~{minutes:.0f} minutes.\n"
+                    f"The app is now offline and will reconnect automatically.\n\n"
+                    f"You can also reconnect manually via the sidebar."
+                ),
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
             )
         else:
-            self._notify_drawer.warning(
-                "API Rate Limited",
-                f"deSEC has throttled requests (HTTP 429).\n"
-                f"Auto-retrying after {retry_after:.0f}s wait.\n\n"
-                f"Consider reducing the rate limit in Settings.",
+            InfoBar.warning(
+                title="API Rate Limited",
+                content=(
+                    f"deSEC has throttled requests (HTTP 429).\n"
+                    f"Auto-retrying after {retry_after:.0f}s wait.\n\n"
+                    f"Consider reducing the rate limit in Settings."
+                ),
+                parent=self.window(),
+                duration=5000,
+                position=InfoBarPosition.TOP,
             )
 
         # Trigger adaptive throttle
@@ -782,6 +791,9 @@ class MainWindow(FluentWindow):
 
         def _sync_done(success, data):
             if success and isinstance(data, list):
+                # Strip DNSSEC keys from zones before caching (fetched on-demand only)
+                for zone in data:
+                    zone.pop("keys", None)
                 self.cache_manager.cache_zones(data)
                 self._on_zones_loaded(True, data, "")
             else:
@@ -827,10 +839,12 @@ class MainWindow(FluentWindow):
                     "Please update your API token via Settings.",
                     "error",
                 )
-                self._notify_drawer.error(
-                    "Invalid API Token",
-                    "The API token was rejected by deSEC (HTTP 401).\n\n"
-                    "Please open Settings and enter a valid token.",
+                InfoBar.error(
+                    title="Invalid API Token",
+                    content="The API token was rejected by deSEC (HTTP 401).\n\nPlease open Settings and enter a valid token.",
+                    parent=self.window(),
+                    duration=8000,
+                    position=InfoBarPosition.TOP,
                 )
             else:
                 self.log_message(f"Failed to sync with API: {message}", "warning")
@@ -912,7 +926,7 @@ class MainWindow(FluentWindow):
                 title="Zone not found",
                 content=f"'{domain_name}' does not exist on your account. "
                         f"It will be created automatically before restoring records.",
-                parent=self,
+                parent=self.window(),
                 duration=6000,
                 position=InfoBarPosition.TOP,
             )
@@ -923,7 +937,7 @@ class MainWindow(FluentWindow):
                     InfoBar.success(
                         title="Zone created",
                         content=f"'{domain_name}' has been created. Restoring records...",
-                        parent=self,
+                        parent=self.window(),
                         duration=4000,
                         position=InfoBarPosition.TOP,
                     )
@@ -934,7 +948,7 @@ class MainWindow(FluentWindow):
                     InfoBar.error(
                         title="Zone creation failed",
                         content=f"Could not create '{domain_name}': {data}",
-                        parent=self,
+                        parent=self.window(),
                         duration=8000,
                         position=InfoBarPosition.TOP,
                     )
@@ -972,9 +986,22 @@ class MainWindow(FluentWindow):
                     f"Restore complete: {len(rrsets)} record sets restored "
                     f"for {domain_name}", "success"
                 )
+                InfoBar.success(
+                    title="Restore Complete",
+                    content=f"{len(rrsets)} record set(s) restored for {domain_name}.",
+                    parent=self,
+                    duration=5000,
+                    position=InfoBarPosition.TOP,
+                )
             else:
-                self.log_message(
-                    f"Restore failed for {domain_name}: {data}", "error"
+                msg = data.get('message', str(data)) if isinstance(data, dict) else str(data)
+                self.log_message(f"Restore failed for {domain_name}: {msg}", "error")
+                InfoBar.error(
+                    title="Restore Failed",
+                    content=f"{domain_name}: {msg}",
+                    parent=self,
+                    duration=8000,
+                    position=InfoBarPosition.TOP,
                 )
             self.cache_manager.clear_domain_cache(domain_name)
             self.record_widget.refresh_records()
@@ -1047,11 +1074,16 @@ class MainWindow(FluentWindow):
         self.log_message("Changelog opened in browser", "info")
 
     def show_keyboard_shortcuts_dialog(self):
-        self._notify_drawer.info(
-            "Keyboard Shortcuts",
-            "F5 \u2014 Sync Now  |  Ctrl+F \u2014 Cycle search fields  |  "
-            "Ctrl+Q \u2014 Quit  |  Delete \u2014 Delete selected  |  "
-            "Escape \u2014 Clear search filter"
+        InfoBar.info(
+            title="Keyboard Shortcuts",
+            content=(
+                "F5 \u2014 Sync Now  |  Ctrl+F \u2014 Cycle search fields  |  "
+                "Ctrl+Q \u2014 Quit  |  Delete \u2014 Delete selected  |  "
+                "Escape \u2014 Clear search filter"
+            ),
+            parent=self.window(),
+            duration=3000,
+            position=InfoBarPosition.TOP,
         )
 
     # ── Toggle actions ────────────────────────────────────────────────────────
@@ -1142,10 +1174,12 @@ class MainWindow(FluentWindow):
             os.execl(python_executable, python_executable, script_path)
         except Exception as e:
             logger.error(f"Failed to restart application: {e}")
-            self._notify_drawer.error(
-                "Restart Failed",
-                f"Failed to restart the application: {str(e)}\n\n"
-                "Please restart manually to apply profile changes.",
+            InfoBar.error(
+                title="Restart Failed",
+                content=f"Failed to restart the application: {str(e)}\n\nPlease restart manually to apply profile changes.",
+                parent=self.window(),
+                duration=8000,
+                position=InfoBarPosition.TOP,
             )
 
     def clear_cache(self):
@@ -1295,8 +1329,6 @@ class MainWindow(FluentWindow):
         super().resizeEvent(event)
         if hasattr(self, "_auth_panel"):
             self._auth_panel.reposition(event.size())
-        if hasattr(self, "_notify_drawer"):
-            self._notify_drawer.reposition(event.size())
         if hasattr(self, "_delete_drawer"):
             self._delete_drawer.reposition(event.size())
         if hasattr(self, "_confirm_drawer"):

@@ -12,7 +12,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtCore import Qt, Signal, QThread, QThreadPool, QPropertyAnimation, QEasingCurve
 from qfluentwidgets import (PushButton, PrimaryPushButton, SearchLineEdit, TableWidget, TextEdit,
                              LineEdit, StrongBodyLabel, CaptionLabel, SubtitleLabel,
-                             isDarkTheme)
+                             isDarkTheme, InfoBar, InfoBarPosition)
 
 from confirm_drawer import DeleteConfirmDrawer
 from workers import LoadRecordsWorker
@@ -533,9 +533,18 @@ class RecordEditPanel(QtWidgets.QWidget):
                     self.save_done.emit()
                 else:
                     if isinstance(response, dict) and 'message' in response:
-                        self.log_signal.emit(f"Failed to save record: {response['message']}", "error")
+                        msg = response['message']
+                        self.log_signal.emit(f"Failed to save record: {msg}", "error")
                     else:
-                        self.log_signal.emit(f"Failed to save record: {response}", "error")
+                        msg = str(response)
+                        self.log_signal.emit(f"Failed to save record: {msg}", "error")
+                    InfoBar.error(
+                        title="Record Save Failed",
+                        content=msg,
+                        parent=self.window(),
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
 
             item = QueueItem(
                 priority=PRIORITY_NORMAL,
@@ -591,8 +600,16 @@ class RecordEditPanel(QtWidgets.QWidget):
             self.log_signal.emit(f"API Error: {error_msg}\nDetails: {raw}", "error")
             self._set_status(f"⚠ API error: {detail}", "error")
         else:
-            self._set_status(f"⚠ Failed: {response}", "error")
-            self.log_signal.emit(f"API Error: {response}", "error")
+            detail = str(response)
+            self._set_status(f"⚠ Failed: {detail}", "error")
+            self.log_signal.emit(f"API Error: {detail}", "error")
+        InfoBar.error(
+            title="Record Save Failed",
+            content=detail,
+            parent=self.window(),
+            duration=8000,
+            position=InfoBarPosition.TOP,
+        )
 
 
 class RecordWidget(QtWidgets.QWidget):
@@ -877,8 +894,20 @@ class RecordWidget(QtWidgets.QWidget):
 
         self.records_search_input = SearchLineEdit()
         self.records_search_input.setPlaceholderText("Type to filter records...")
-        self.records_search_input.textChanged.connect(self.filter_records)
+        self.records_search_input.textChanged.connect(self._apply_filters)
         search_layout.addWidget(self.records_search_input)
+
+        self.type_filter_input = LineEdit()
+        self.type_filter_input.setPlaceholderText("Type")
+        self.type_filter_input.setFixedWidth(90)
+        self.type_filter_input.textChanged.connect(self._apply_filters)
+        search_layout.addWidget(self.type_filter_input)
+
+        self.ttl_filter_input = LineEdit()
+        self.ttl_filter_input.setPlaceholderText("TTL")
+        self.ttl_filter_input.setFixedWidth(80)
+        self.ttl_filter_input.textChanged.connect(self._apply_filters)
+        search_layout.addWidget(self.ttl_filter_input)
         
         header_layout.addLayout(search_layout)
         
@@ -1162,22 +1191,36 @@ class RecordWidget(QtWidgets.QWidget):
             self.records_count_label.setText("No domain selected")
             return
         
-        # Get current filter text
+        # Get current filter values
         filter_text = getattr(self, '_current_filter', '').lower()
-        
+        type_filter = getattr(self, '_type_filter', '').lower()
+        ttl_filter = getattr(self, '_ttl_filter', '')
+
         # Calculate the number of filtered records for display
         total_records = len(self.records)
         filtered_records = []
-        
+
         # Note: we no longer pre-sort the records since we'll use Qt's built-in sorting
-        for row, record in enumerate(self.records):
-            # Filter records by name, type, or content
-            if filter_text in record.get('subname', '').lower() or filter_text in record.get('type', '').lower() or filter_text in "\n".join(record.get('records', [])).lower():
-                filtered_records.append(record)
-        
+        for record in self.records:
+            # Main search: matches subname, type, or content
+            if filter_text and not (
+                filter_text in record.get('subname', '').lower()
+                or filter_text in record.get('type', '').lower()
+                or filter_text in "\n".join(record.get('records', [])).lower()
+            ):
+                continue
+            # Type filter: record type must contain the filter text
+            if type_filter and type_filter not in record.get('type', '').lower():
+                continue
+            # TTL filter: record TTL string must contain the filter text
+            if ttl_filter and ttl_filter not in str(record.get('ttl', '')):
+                continue
+            filtered_records.append(record)
+
         # Update the records count label
         filtered_count = len(filtered_records)
-        if filter_text:
+        any_filter = filter_text or type_filter or ttl_filter
+        if any_filter:
             self.records_count_label.setText(f"Showing {filtered_count} out of {total_records} records")
         else:
             self.records_count_label.setText(f"Total records: {total_records}")
@@ -1247,16 +1290,14 @@ class RecordWidget(QtWidgets.QWidget):
             self.records_table.sortByColumn(COL_NAME, Qt.SortOrder.AscendingOrder)
     
     def filter_records(self, filter_text):
-        """
-        Filter the records table by name, type, or content.
-        
-        Args:
-            filter_text (str): Text to filter by
-        """
-        # Store the filter text for later use
-        self._current_filter = filter_text.lower()
-        
-        # Reapply the filter by updating the table
+        """Legacy entry point — delegates to _apply_filters."""
+        self.records_search_input.setText(filter_text)
+
+    def _apply_filters(self):
+        """Read all filter fields and refresh the table."""
+        self._current_filter = self.records_search_input.text().lower()
+        self._type_filter = self.type_filter_input.text().strip().lower()
+        self._ttl_filter = self.ttl_filter_input.text().strip()
         self.update_records_table()
     
     def _get_timestamp_tooltip(self, record):
@@ -1553,7 +1594,15 @@ class RecordWidget(QtWidgets.QWidget):
                         self.records_changed.emit()
                         self.refresh_records()
                     else:
-                        self.log_message.emit(f"Failed to delete record: {response}", "error")
+                        err_msg = response.get('message', str(response)) if isinstance(response, dict) else str(response)
+                        self.log_message.emit(f"Failed to delete record: {err_msg}", "error")
+                        InfoBar.error(
+                            title="Delete Failed",
+                            content=err_msg,
+                            parent=self.window(),
+                            duration=8000,
+                            position=InfoBarPosition.TOP,
+                        )
 
                 item = QueueItem(
                     priority=PRIORITY_NORMAL,
@@ -1574,7 +1623,15 @@ class RecordWidget(QtWidgets.QWidget):
                     self.records_changed.emit()
                     self.refresh_records()
                 else:
-                    self.log_message.emit(f"Failed to delete record: {response}", "error")
+                    err_msg = response.get('message', str(response)) if isinstance(response, dict) else str(response)
+                    self.log_message.emit(f"Failed to delete record: {err_msg}", "error")
+                    InfoBar.error(
+                        title="Delete Failed",
+                        content=err_msg,
+                        parent=self.window(),
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
 
         self._delete_drawer.ask(
             title="Delete Record",
