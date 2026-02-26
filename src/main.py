@@ -66,7 +66,7 @@ def main():
         try:
             QtWidgets.QMessageBox.critical(None, "Fatal Error", 
                 f"The application encountered a fatal error and needs to close.\n\nDetails: {str(e)}")
-        except:
+        except Exception:
             pass
         sys.exit(1)
 

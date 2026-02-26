@@ -2,46 +2,322 @@
 # -*- coding: utf-8 -*-
 
 """
-Profile management dialog for deSEC Qt DNS Manager.
+Profile management interface for deSEC Qt DNS Manager.
 Allows users to create, switch, rename, and delete profiles.
+
+All interactions use slide-in panels and drawers (no popup dialogs).
 """
 
 import logging
-from PySide6 import QtWidgets, QtCore
-from PySide6.QtCore import Qt, Signal
-from qfluentwidgets import PushButton, PrimaryPushButton, ListWidget, LineEdit, LargeTitleLabel
+from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
+from qfluentwidgets import (
+    PushButton, PrimaryPushButton, ListWidget, LineEdit,
+    LargeTitleLabel, SubtitleLabel, isDarkTheme,
+)
 from fluent_styles import container_qss
-from confirm_drawer import DeleteConfirmDrawer
+from confirm_drawer import DeleteConfirmDrawer, ConfirmDrawer
 from notify_drawer import NotifyDrawer
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# ProfileFormPanel — slide-in right panel for create / rename
+# ---------------------------------------------------------------------------
+
+class ProfileFormPanel(QtWidgets.QWidget):
+    """Slide-in right panel for creating or renaming a profile.
+
+    Follows the same pattern as RecordEditPanel, AddZonePanel, and
+    TokenPolicyPanel: overlay on the right side of the parent widget,
+    animated with QPropertyAnimation on ``pos``.
+    """
+
+    PANEL_WIDTH = 400
+
+    profile_saved = Signal()        # emitted on successful create / rename
+    cancelled = Signal()
+
+    def __init__(self, profile_manager, parent=None):
+        super().__init__(parent)
+        self.profile_manager = profile_manager
+        self._mode = "create"       # "create" or "rename"
+        self._profile_data = None   # filled in rename mode
+        self._animation = None
+        self.setObjectName("profileFormPanel")
+        self.hide()
+        self._setup_ui()
+
+    # ── painting ───────────────────────────────────────────────────────
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        bg = QtGui.QColor(32, 32, 32) if isDarkTheme() else QtGui.QColor(243, 243, 243)
+        painter.fillRect(self.rect(), bg)
+
+    # ── UI ─────────────────────────────────────────────────────────────
+
+    def _setup_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        # Header row: title + close button
+        header_row = QtWidgets.QHBoxLayout()
+        self._title = SubtitleLabel("Create New Profile")
+        header_row.addWidget(self._title, 1)
+        close_btn = PushButton("\u2715")
+        close_btn.setFixedSize(32, 32)
+        close_btn.setToolTip("Close (Esc)")
+        close_btn.clicked.connect(self._on_cancel)
+        header_row.addWidget(close_btn)
+        layout.addLayout(header_row)
+
+        # Escape shortcut
+        esc = QtGui.QShortcut(QtGui.QKeySequence(Qt.Key.Key_Escape), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self._on_cancel)
+
+        # Form
+        form = QtWidgets.QFormLayout()
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.DontWrapRows)
+
+        self._name_input = LineEdit()
+        self._name_input.setPlaceholderText("e.g., work, personal, staging")
+        self._name_input.textChanged.connect(self._validate)
+        form.addRow("Profile Name:", self._name_input)
+
+        self._display_input = LineEdit()
+        self._display_input.setPlaceholderText("e.g., Work Account, Personal DNS")
+        self._display_input.textChanged.connect(self._validate)
+        form.addRow("Display Name:", self._display_input)
+
+        layout.addLayout(form)
+
+        # Help text
+        self._help_label = QtWidgets.QLabel(
+            "Profile name is used internally and cannot contain spaces or special characters. "
+            "Display name is shown in the interface."
+        )
+        self._help_label.setWordWrap(True)
+        layout.addWidget(self._help_label)
+
+        # Error label (hidden by default)
+        self._error_label = QtWidgets.QLabel("")
+        self._error_label.setWordWrap(True)
+        self._error_label.setStyleSheet("color: #e04040;")
+        self._error_label.hide()
+        layout.addWidget(self._error_label)
+
+        layout.addStretch()
+
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = PushButton("Cancel")
+        cancel_btn.clicked.connect(self._on_cancel)
+        btn_row.addWidget(cancel_btn)
+        self._save_btn = PrimaryPushButton("Create")
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(self._on_save)
+        btn_row.addWidget(self._save_btn)
+        layout.addLayout(btn_row)
+
+    # ── public API ─────────────────────────────────────────────────────
+
+    def open_for_create(self):
+        """Open the panel in create mode."""
+        self._mode = "create"
+        self._profile_data = None
+        self._title.setText("Create New Profile")
+        self._save_btn.setText("Create")
+        self._name_input.setReadOnly(False)
+        self._name_input.clear()
+        self._display_input.clear()
+        self._error_label.hide()
+        self._help_label.setText(
+            "Profile name is used internally and cannot contain spaces or special characters. "
+            "Display name is shown in the interface."
+        )
+        self._name_input.setFocus()
+        self._validate()
+        self.slide_in()
+
+    def open_for_rename(self, profile_data):
+        """Open the panel in rename mode with pre-filled data."""
+        self._mode = "rename"
+        self._profile_data = profile_data
+        self._title.setText(f"Rename Profile")
+
+        is_default = profile_data["name"] == self.profile_manager.DEFAULT_PROFILE_NAME
+
+        self._save_btn.setText("Save")
+        self._name_input.setText(profile_data["name"])
+        self._name_input.setReadOnly(is_default)
+        self._display_input.setText(profile_data["display_name"])
+        self._error_label.hide()
+
+        if is_default:
+            self._help_label.setText(
+                "The default profile's internal name cannot be changed, "
+                "but you can update its display name."
+            )
+        else:
+            self._help_label.setText(
+                "Profile name is used internally and cannot contain spaces or special characters."
+            )
+
+        self._display_input.setFocus()
+        self._display_input.selectAll()
+        self._validate()
+        self.slide_in()
+
+    # ── validation ─────────────────────────────────────────────────────
+
+    def _validate(self):
+        name = self._name_input.text().strip()
+        display_name = self._display_input.text().strip()
+
+        if self._mode == "create":
+            is_valid = bool(name and name.replace('_', '').replace('-', '').isalnum())
+            if is_valid:
+                existing = self.profile_manager.get_available_profiles()
+                if name in [p["name"] for p in existing]:
+                    is_valid = False
+            is_valid = is_valid and bool(display_name or name)
+        else:
+            # rename mode
+            is_default = (self._profile_data and
+                          self._profile_data["name"] == self.profile_manager.DEFAULT_PROFILE_NAME)
+            if is_default:
+                is_valid = bool(display_name)
+            else:
+                is_valid = bool(name and name.replace('_', '').replace('-', '').isalnum())
+                if is_valid and name != self._profile_data["name"]:
+                    existing = self.profile_manager.get_available_profiles()
+                    if name in [p["name"] for p in existing]:
+                        is_valid = False
+                is_valid = is_valid and bool(display_name)
+
+        self._save_btn.setEnabled(is_valid)
+
+    # ── save ───────────────────────────────────────────────────────────
+
+    def _on_save(self):
+        name = self._name_input.text().strip()
+        display_name = self._display_input.text().strip() or name
+
+        if self._mode == "create":
+            success = self.profile_manager.create_profile(name, display_name)
+            if success:
+                self.slide_out()
+                self.profile_saved.emit()
+            else:
+                self._error_label.setText(
+                    f"Failed to create profile '{name}'. "
+                    "It may already exist or there was a file system error."
+                )
+                self._error_label.show()
+        else:
+            new_name = name if not self._name_input.isReadOnly() else self._profile_data["name"]
+            success = self.profile_manager.rename_profile(
+                self._profile_data["name"], new_name, display_name,
+            )
+            if success:
+                self.slide_out()
+                self.profile_saved.emit()
+            else:
+                self._error_label.setText(
+                    "Failed to rename profile. "
+                    "The new name may already exist or there was a file system error."
+                )
+                self._error_label.show()
+
+    def _on_cancel(self):
+        self.slide_out()
+        self.cancelled.emit()
+
+    # ── animation ──────────────────────────────────────────────────────
+
+    def slide_in(self):
+        self.setStyleSheet(
+            f"QWidget#{self.objectName()} {{ border-left: 1px solid rgba(128,128,128,0.35); }}"
+            + container_qss()
+        )
+        parent = self.parent()
+        if parent is None:
+            return
+        pw, ph = parent.width(), parent.height()
+        self.setGeometry(pw, 0, self.PANEL_WIDTH, ph)
+        self.show()
+        self.raise_()
+        self._run_animation(
+            QtCore.QPoint(pw, 0),
+            QtCore.QPoint(pw - self.PANEL_WIDTH, 0),
+            QEasingCurve.Type.OutCubic,
+        )
+
+    def slide_out(self):
+        parent = self.parent()
+        if parent is None:
+            self.hide()
+            return
+        pw = parent.width()
+        anim = self._run_animation(
+            self.pos(),
+            QtCore.QPoint(pw, 0),
+            QEasingCurve.Type.InCubic,
+        )
+        anim.finished.connect(self.hide)
+
+    def reposition(self, parent_size):
+        if not self.isVisible():
+            return
+        pw, ph = parent_size.width(), parent_size.height()
+        self.setGeometry(pw - self.PANEL_WIDTH, 0, self.PANEL_WIDTH, ph)
+
+    def _run_animation(self, start, end, easing):
+        if self._animation and self._animation.state() == QPropertyAnimation.State.Running:
+            self._animation.stop()
+        anim = QPropertyAnimation(self, b"pos")
+        anim.setDuration(220)
+        anim.setStartValue(start)
+        anim.setEndValue(end)
+        anim.setEasingCurve(easing)
+        self._animation = anim
+        anim.start()
+        return anim
+
+
+# ---------------------------------------------------------------------------
+# ProfileInterface — sidebar page
+# ---------------------------------------------------------------------------
+
 class ProfileInterface(QtWidgets.QWidget):
     """Profile management page for the Fluent sidebar navigation."""
 
-    # Signal emitted when profile is switched
     profile_switched = Signal(str)  # profile_name
 
     def __init__(self, profile_manager, parent=None):
-        """
-        Initialize the profile management page.
-
-        Args:
-            profile_manager: ProfileManager instance
-            parent: Parent widget, if any
-        """
         super().__init__(parent)
         self.setObjectName("profileInterface")
 
         self.profile_manager = profile_manager
         self.setup_ui()
+
+        # Drawers (parent=self so they overlay this page)
         self._delete_drawer = DeleteConfirmDrawer(parent=self)
+        self._confirm_drawer = ConfirmDrawer(parent=self)
         self._notify_drawer = NotifyDrawer(parent=self)
+
+        # Slide-in form panel (parent=self so it overlays this page)
+        self._form_panel = ProfileFormPanel(self.profile_manager, parent=self)
+        self._form_panel.profile_saved.connect(self.refresh_profiles)
+
         self.refresh_profiles()
 
     def showEvent(self, event):
-        """Refresh profile list and theme-aware styles whenever the page becomes visible."""
         super().showEvent(event)
         self.setStyleSheet(container_qss())
         self.refresh_profiles()
@@ -50,12 +326,14 @@ class ProfileInterface(QtWidgets.QWidget):
         super().resizeEvent(event)
         if hasattr(self, '_delete_drawer'):
             self._delete_drawer.reposition(event.size())
+        if hasattr(self, '_confirm_drawer'):
+            self._confirm_drawer.reposition(event.size())
         if hasattr(self, '_notify_drawer'):
             self._notify_drawer.reposition(event.size())
+        if hasattr(self, '_form_panel'):
+            self._form_panel.reposition(event.size())
 
     def setup_ui(self):
-        """Set up the user interface."""
-        # Main layout
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(36, 20, 36, 20)
         layout.setSpacing(16)
@@ -74,7 +352,7 @@ class ProfileInterface(QtWidgets.QWidget):
         # Profiles list and controls
         content_layout = QtWidgets.QHBoxLayout()
 
-        # Left side - profiles list
+        # Left side — profiles list
         left_layout = QtWidgets.QVBoxLayout()
 
         profiles_label = QtWidgets.QLabel("Available Profiles:")
@@ -88,10 +366,9 @@ class ProfileInterface(QtWidgets.QWidget):
 
         content_layout.addLayout(left_layout, 2)
 
-        # Right side - controls
+        # Right side — controls
         controls_layout = QtWidgets.QVBoxLayout()
 
-        # Profile actions
         self.switch_button = PushButton("Switch To")
         self.switch_button.setToolTip("Switch to the selected profile")
         self.switch_button.clicked.connect(self.switch_profile)
@@ -151,16 +428,13 @@ class ProfileInterface(QtWidgets.QWidget):
         layout.addLayout(button_layout)
 
     def refresh_profiles(self):
-        """Refresh the profiles list."""
         self.profiles_list.clear()
 
         profiles = self.profile_manager.get_available_profiles()
-        current_profile_name = self.profile_manager.get_current_profile_name()
 
         for profile in profiles:
             item = QtWidgets.QListWidgetItem()
 
-            # Create display text
             display_text = profile["display_name"]
             if profile["is_current"]:
                 display_text += " (Current)"
@@ -168,7 +442,6 @@ class ProfileInterface(QtWidgets.QWidget):
             item.setText(display_text)
             item.setData(Qt.ItemDataRole.UserRole, profile)
 
-            # Bold font for current profile
             if profile["is_current"]:
                 font = item.font()
                 font.setBold(True)
@@ -185,13 +458,11 @@ class ProfileInterface(QtWidgets.QWidget):
                 break
 
     def on_profile_selection_changed(self):
-        """Handle profile selection change."""
         current_item = self.profiles_list.currentItem()
 
         if current_item:
             profile_data = current_item.data(Qt.ItemDataRole.UserRole)
 
-            # Update profile info
             self.info_name.setText(profile_data["name"])
             self.info_display_name.setText(profile_data["display_name"])
 
@@ -201,7 +472,7 @@ class ProfileInterface(QtWidgets.QWidget):
                     from datetime import datetime
                     dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                     created_at = dt.strftime("%Y-%m-%d %H:%M")
-                except:
+                except Exception:
                     pass
             self.info_created.setText(created_at)
 
@@ -211,11 +482,10 @@ class ProfileInterface(QtWidgets.QWidget):
                     from datetime import datetime
                     dt = datetime.fromisoformat(last_used.replace('Z', '+00:00'))
                     last_used = dt.strftime("%Y-%m-%d %H:%M")
-                except:
+                except Exception:
                     pass
             self.info_last_used.setText(last_used)
 
-            # Update button states
             is_current = profile_data["is_current"]
             is_default = profile_data["name"] == self.profile_manager.DEFAULT_PROFILE_NAME
 
@@ -223,25 +493,28 @@ class ProfileInterface(QtWidgets.QWidget):
             self.rename_button.setEnabled(True)
             self.delete_button.setEnabled(not is_default and not is_current)
         else:
-            # Clear info
             self.info_name.setText("-")
             self.info_display_name.setText("-")
             self.info_created.setText("-")
             self.info_last_used.setText("-")
 
-            # Disable buttons
             self.switch_button.setEnabled(False)
             self.rename_button.setEnabled(False)
             self.delete_button.setEnabled(False)
 
+    # ── actions ────────────────────────────────────────────────────────
+
     def create_profile(self):
-        """Show dialog to create a new profile."""
-        dialog = CreateProfileDialog(self.profile_manager, self)
-        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.refresh_profiles()
+        self._form_panel.open_for_create()
+
+    def rename_profile(self):
+        current_item = self.profiles_list.currentItem()
+        if not current_item:
+            return
+        profile_data = current_item.data(Qt.ItemDataRole.UserRole)
+        self._form_panel.open_for_rename(profile_data)
 
     def switch_profile(self):
-        """Switch to the selected profile."""
         current_item = self.profiles_list.currentItem()
         if not current_item:
             return
@@ -254,40 +527,28 @@ class ProfileInterface(QtWidgets.QWidget):
                                      f"'{profile_data['display_name']}' is already the current profile.")
             return
 
-        # Confirm switch
-        reply = QtWidgets.QMessageBox.question(
-            self, "Switch Profile",
-            f"Switch to profile '{profile_data['display_name']}'?\n\n"
-            "This will close the current session and reload with the new profile's settings.",
-            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-            QtWidgets.QMessageBox.StandardButton.Yes
-        )
+        display = profile_data["display_name"]
 
-        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+        def _do_switch():
             success = self.profile_manager.switch_to_profile(profile_name)
             if success:
                 self.profile_switched.emit(profile_name)
                 self._notify_drawer.success("Profile Switched",
-                                            f"Successfully switched to '{profile_data['display_name']}'.")
+                                            f"Successfully switched to '{display}'.")
                 self.refresh_profiles()
             else:
                 self._notify_drawer.error("Switch Failed",
-                                          f"Failed to switch to profile '{profile_data['display_name']}'.")
+                                          f"Failed to switch to profile '{display}'.")
 
-    def rename_profile(self):
-        """Show dialog to rename the selected profile."""
-        current_item = self.profiles_list.currentItem()
-        if not current_item:
-            return
-
-        profile_data = current_item.data(Qt.ItemDataRole.UserRole)
-
-        dialog = RenameProfileDialog(profile_data, self.profile_manager, self)
-        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.refresh_profiles()
+        self._confirm_drawer.ask(
+            title="Switch Profile",
+            message=f"Switch to profile '{display}'?\n\n"
+                    "This will close the current session and reload with the new profile's settings.",
+            on_confirm=_do_switch,
+            confirm_text="Switch Profile",
+        )
 
     def delete_profile(self):
-        """Delete the selected profile after confirmation."""
         current_item = self.profiles_list.currentItem()
         if not current_item:
             return
@@ -325,226 +586,3 @@ class ProfileInterface(QtWidgets.QWidget):
             on_confirm=_do_delete,
             confirm_text="Delete Profile",
         )
-
-
-class CreateProfileDialog(QtWidgets.QDialog):
-    """Dialog for creating a new profile."""
-
-    def __init__(self, profile_manager, parent=None):
-        super(CreateProfileDialog, self).__init__(parent)
-        self.profile_manager = profile_manager
-        self.setup_ui()
-        self._notify_drawer = NotifyDrawer(parent=self)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, '_notify_drawer'):
-            self._notify_drawer.reposition(event.size())
-
-    def setup_ui(self):
-        """Set up the user interface."""
-        self.setWindowTitle("Create New Profile")
-        self.setModal(True)
-        self.setFixedSize(400, 200)
-
-        layout = QtWidgets.QVBoxLayout(self)
-
-        # Header
-        header = QtWidgets.QLabel("Create New Profile")
-        layout.addWidget(header)
-
-        # Form
-        form_layout = QtWidgets.QFormLayout()
-
-        self.name_input = LineEdit()
-        self.name_input.setPlaceholderText("e.g., work, personal, staging")
-        self.name_input.textChanged.connect(self.validate_input)
-        form_layout.addRow("Profile Name:", self.name_input)
-
-        self.display_name_input = LineEdit()
-        self.display_name_input.setPlaceholderText("e.g., Work Account, Personal DNS")
-        form_layout.addRow("Display Name:", self.display_name_input)
-
-        layout.addLayout(form_layout)
-
-        # Help text
-        help_text = QtWidgets.QLabel(
-            "Profile name is used internally and cannot contain spaces or special characters. "
-            "Display name is shown in the interface."
-        )
-        help_text.setWordWrap(True)
-        layout.addWidget(help_text)
-
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_row.addStretch()
-        cancel_btn = PushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        btn_row.addWidget(cancel_btn)
-        self.ok_button = PrimaryPushButton("Create")
-        self.ok_button.setEnabled(False)
-        self.ok_button.clicked.connect(self.accept)
-        btn_row.addWidget(self.ok_button)
-        layout.addLayout(btn_row)
-
-        self.name_input.setFocus()
-        self.setStyleSheet(container_qss())
-
-    def validate_input(self):
-        """Validate the input and enable/disable OK button."""
-        name = self.name_input.text().strip()
-
-        # Check if name is valid (alphanumeric and underscores only)
-        is_valid = bool(name and name.replace('_', '').replace('-', '').isalnum())
-
-        # Check if name already exists
-        if is_valid:
-            existing_profiles = self.profile_manager.get_available_profiles()
-            is_valid = name not in [p["name"] for p in existing_profiles]
-
-        self.ok_button.setEnabled(is_valid)
-
-    def accept(self):
-        """Handle dialog acceptance."""
-        name = self.name_input.text().strip()
-        display_name = self.display_name_input.text().strip() or name
-
-        if not name:
-            self._notify_drawer.warning("Invalid Input", "Please enter a profile name.")
-            return
-
-        success = self.profile_manager.create_profile(name, display_name)
-        if success:
-            super(CreateProfileDialog, self).accept()
-        else:
-            self._notify_drawer.error("Creation Failed",
-                                      f"Failed to create profile '{name}'. "
-                                      "It may already exist or there was a file system error.")
-
-
-class RenameProfileDialog(QtWidgets.QDialog):
-    """Dialog for renaming a profile."""
-
-    def __init__(self, profile_data, profile_manager, parent=None):
-        super(RenameProfileDialog, self).__init__(parent)
-        self.profile_data = profile_data
-        self.profile_manager = profile_manager
-        self.setup_ui()
-        self._notify_drawer = NotifyDrawer(parent=self)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, '_notify_drawer'):
-            self._notify_drawer.reposition(event.size())
-
-    def setup_ui(self):
-        """Set up the user interface."""
-        self.setWindowTitle("Rename Profile")
-        self.setModal(True)
-        self.setFixedSize(400, 200)
-
-        layout = QtWidgets.QVBoxLayout(self)
-
-        # Header
-        header = QtWidgets.QLabel(f"Rename Profile: {self.profile_data['display_name']}")
-        layout.addWidget(header)
-
-        # Form
-        form_layout = QtWidgets.QFormLayout()
-
-        # For default profile, only allow changing display name
-        is_default = self.profile_data["name"] == self.profile_manager.DEFAULT_PROFILE_NAME
-
-        if not is_default:
-            self.name_input = LineEdit()
-            self.name_input.setText(self.profile_data["name"])
-            self.name_input.textChanged.connect(self.validate_input)
-            form_layout.addRow("Profile Name:", self.name_input)
-        else:
-            # Show read-only name for default profile
-            name_label = QtWidgets.QLabel(self.profile_data["name"])
-            form_layout.addRow("Profile Name:", name_label)
-            self.name_input = None
-
-        self.display_name_input = LineEdit()
-        self.display_name_input.setText(self.profile_data["display_name"])
-        self.display_name_input.textChanged.connect(self.validate_input)
-        form_layout.addRow("Display Name:", self.display_name_input)
-
-        layout.addLayout(form_layout)
-
-        if is_default:
-            help_text = QtWidgets.QLabel(
-                "The default profile's internal name cannot be changed, "
-                "but you can update its display name."
-            )
-        else:
-            help_text = QtWidgets.QLabel(
-                "Profile name is used internally and cannot contain spaces or special characters."
-            )
-
-        help_text.setWordWrap(True)
-        layout.addWidget(help_text)
-
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_row.addStretch()
-        cancel_btn = PushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        btn_row.addWidget(cancel_btn)
-        self.ok_button = PrimaryPushButton("Save")
-        self.ok_button.clicked.connect(self.accept)
-        btn_row.addWidget(self.ok_button)
-        layout.addLayout(btn_row)
-
-        # Focus on display name input
-        self.display_name_input.setFocus()
-        self.display_name_input.selectAll()
-
-        # Initial validation
-        self.validate_input()
-        self.setStyleSheet(container_qss())
-
-    def validate_input(self):
-        """Validate the input and enable/disable OK button."""
-        display_name = self.display_name_input.text().strip()
-
-        if self.name_input:  # Not default profile
-            name = self.name_input.text().strip()
-            is_valid = bool(name and name.replace('_', '').replace('-', '').isalnum())
-
-            # Check if name changed and already exists
-            if is_valid and name != self.profile_data["name"]:
-                existing_profiles = self.profile_manager.get_available_profiles()
-                is_valid = name not in [p["name"] for p in existing_profiles]
-        else:  # Default profile
-            is_valid = True
-
-        # Must have display name
-        is_valid = is_valid and bool(display_name)
-
-        self.ok_button.setEnabled(is_valid)
-
-    def accept(self):
-        """Handle dialog acceptance."""
-        display_name = self.display_name_input.text().strip()
-
-        if self.name_input:  # Not default profile
-            new_name = self.name_input.text().strip()
-        else:  # Default profile
-            new_name = self.profile_data["name"]
-
-        if not display_name:
-            self._notify_drawer.warning("Invalid Input", "Please enter a display name.")
-            return
-
-        success = self.profile_manager.rename_profile(
-            self.profile_data["name"],
-            new_name,
-            display_name
-        )
-
-        if success:
-            super(RenameProfileDialog, self).accept()
-        else:
-            self._notify_drawer.error("Rename Failed",
-                                      "Failed to rename profile. "
-                                      "The new name may already exist or there was a file system error.")

@@ -9,12 +9,13 @@ as well as managing per-token RRset policies.
 
 import logging
 from PySide6 import QtWidgets, QtCore, QtGui
-from PySide6.QtCore import Qt, QThreadPool, QRunnable, QObject, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QTimer, QThreadPool, QRunnable, QObject, Signal, QPropertyAnimation, QEasingCurve
 from qfluentwidgets import (PushButton, PrimaryPushButton, LineEdit, CheckBox,
                              PlainTextEdit, TableWidget, StrongBodyLabel, CaptionLabel,
                              isDarkTheme, SubtitleLabel)
 from fluent_styles import container_qss, SPLITTER_QSS
 from notify_drawer import NotifyDrawer
+from api_queue import QueueItem, PRIORITY_NORMAL
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +123,17 @@ class TokenSecretDialog(QtWidgets.QDialog):
         self.setStyleSheet(container_qss())
 
     def _copy_token(self):
-        QtWidgets.QApplication.clipboard().setText(self.token_value)
-        self._copy_btn.setText("Copied!")
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(self.token_value)
+        self._copy_btn.setText("Copied! (clears in 30s)")
+
+        # Auto-clear clipboard after 30 seconds if it still contains the token
+        token_val = self.token_value
+        def _clear_clipboard():
+            if clipboard.text() == token_val:
+                clipboard.clear()
+                logger.info("Clipboard auto-cleared after token copy timeout")
+        QTimer.singleShot(30000, _clear_clipboard)
 
     def _on_ack_changed(self):
         self._close_btn.setEnabled(self._ack_checkbox.isChecked())
@@ -141,9 +151,10 @@ class TokenPolicyPanel(QtWidgets.QWidget):
     save_done = QtCore.Signal()
     cancelled = QtCore.Signal()
 
-    def __init__(self, api_client, parent=None):
+    def __init__(self, api_client, parent=None, api_queue=None):
         super().__init__(parent)
         self.api_client = api_client
+        self.api_queue = api_queue
         self._token_id = None
         self._policy = None
         self._animation = None
@@ -259,26 +270,67 @@ class TokenPolicyPanel(QtWidgets.QWidget):
         self._save_btn.setEnabled(False)
         self._save_btn.setText("Saving…")
 
-        if self._policy:
-            success, result = self.api_client.update_token_policy(
-                self._token_id, self._policy['id'],
-                domain=domain, subname=subname, type=type_, perm_write=perm_write
-            )
-        else:
-            success, result = self.api_client.create_token_policy(
-                self._token_id, domain=domain, subname=subname,
-                type_=type_, perm_write=perm_write
-            )
+        is_edit = bool(self._policy)
 
-        self._save_btn.setEnabled(True)
-        self._save_btn.setText("Save")
+        if self.api_queue:
+            if is_edit:
+                api_method = self.api_client.update_token_policy
+                args = (self._token_id, self._policy['id'])
+                kwargs = dict(domain=domain, subname=subname, type=type_, perm_write=perm_write)
+                action = f"Update policy for token {self._token_id}"
+            else:
+                api_method = self.api_client.create_token_policy
+                args = (self._token_id,)
+                kwargs = dict(domain=domain, subname=subname, type_=type_, perm_write=perm_write)
+                action = f"Create policy for token {self._token_id}"
 
-        if success:
-            self.slide_out()
-            self.save_done.emit()
+            def _on_done(success, result):
+                self._save_btn.setEnabled(True)
+                self._save_btn.setText("Save")
+                if success:
+                    self.slide_out()
+                    self.save_done.emit()
+                else:
+                    msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                    self._error_label.setText(f"Error: {msg}")
+
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="tokens",
+                action=action,
+                callable=api_method,
+                args=args,
+                kwargs=kwargs,
+                callback=_on_done,
+            )
+            self.api_queue.enqueue(item)
+
+            if self.api_queue.is_paused:
+                self._save_btn.setEnabled(True)
+                self._save_btn.setText("Save")
+                self._error_label.setText("Queued — will be sent when back online.")
+                self.slide_out()
         else:
-            msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-            self._error_label.setText(f"Error: {msg}")
+            if is_edit:
+                success, result = self.api_client.update_token_policy(
+                    self._token_id, self._policy['id'],
+                    domain=domain, subname=subname, type=type_, perm_write=perm_write
+                )
+            else:
+                success, result = self.api_client.create_token_policy(
+                    self._token_id, domain=domain, subname=subname,
+                    type_=type_, perm_write=perm_write
+                )
+
+            self._save_btn.setEnabled(True)
+            self._save_btn.setText("Save")
+
+            if success:
+                self.slide_out()
+                self.save_done.emit()
+            else:
+                msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                self._error_label.setText(f"Error: {msg}")
 
     def _on_cancel(self):
         self.slide_out()
@@ -346,9 +398,10 @@ class CreateTokenPanel(QtWidgets.QWidget):
     token_created = QtCore.Signal()
     cancelled = QtCore.Signal()
 
-    def __init__(self, api_client, parent=None):
+    def __init__(self, api_client, parent=None, api_queue=None):
         super().__init__(parent)
         self.api_client = api_client
+        self.api_queue = api_queue
         self._animation = None
         self.setObjectName("createTokenPanel")
         self.hide()
@@ -460,7 +513,7 @@ class CreateTokenPanel(QtWidgets.QWidget):
         self._create_btn.setEnabled(False)
         self._create_btn.setText("Creating…")
 
-        success, result = self.api_client.create_token(
+        create_kwargs = dict(
             name=name,
             perm_create_domain=self._perm_create.isChecked(),
             perm_delete_domain=self._perm_delete.isChecked(),
@@ -471,26 +524,61 @@ class CreateTokenPanel(QtWidgets.QWidget):
             auto_policy=self._auto_policy.isChecked(),
         )
 
-        self._create_btn.setEnabled(True)
-        self._create_btn.setText("Create Token")
+        if self.api_queue:
+            def _on_done(success, result):
+                self._create_btn.setEnabled(True)
+                self._create_btn.setText("Create Token")
+                if success:
+                    token_id = result.get('id', '')
+                    token_value = result.get('token', '')
+                    if token_id:
+                        # Create default policy via queue too
+                        policy_item = QueueItem(
+                            priority=PRIORITY_NORMAL,
+                            category="tokens",
+                            action=f"Create default policy for token {token_id}",
+                            callable=self.api_client.create_token_policy,
+                            args=(token_id,),
+                            kwargs=dict(domain=None, subname=None, type_=None, perm_write=False),
+                        )
+                        self.api_queue.enqueue(policy_item)
+                    secret_dlg = TokenSecretDialog(token_value, self.window())
+                    secret_dlg.exec()
+                    self.slide_out()
+                    self.token_created.emit()
+                else:
+                    msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                    self._error_label.setText(f"Error: {msg}")
 
-        if success:
-            token_id = result.get('id', '')
-            token_value = result.get('token', '')
-
-            if token_id:
-                self.api_client.create_token_policy(
-                    token_id, domain=None, subname=None, type_=None, perm_write=False,
-                )
-
-            secret_dlg = TokenSecretDialog(token_value, self.window())
-            secret_dlg.exec()
-
-            self.slide_out()
-            self.token_created.emit()
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="tokens",
+                action=f"Create token '{name}'",
+                callable=self.api_client.create_token,
+                kwargs=create_kwargs,
+                callback=_on_done,
+            )
+            self.api_queue.enqueue(item)
         else:
-            msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-            self._error_label.setText(f"Error: {msg}")
+            success, result = self.api_client.create_token(**create_kwargs)
+
+            self._create_btn.setEnabled(True)
+            self._create_btn.setText("Create Token")
+
+            if success:
+                token_id = result.get('id', '')
+                token_value = result.get('token', '')
+                if token_id:
+                    self.api_client.create_token_policy(
+                        token_id, domain=None, subname=None, type_=None, perm_write=False,
+                    )
+                secret_dlg = TokenSecretDialog(token_value, self.window())
+                secret_dlg.exec()
+                self.slide_out()
+                self.token_created.emit()
+            else:
+                msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                self._error_label.setText(f"Error: {msg}")
 
     def _on_cancel(self):
         self.slide_out()
@@ -558,10 +646,12 @@ class TokenManagerInterface(QtWidgets.QWidget):
     Right panel: tab widget with Details and Policies tabs.
     """
 
-    def __init__(self, api_client, parent=None):
+    def __init__(self, api_client, parent=None, api_queue=None, cache_manager=None):
         super().__init__(parent)
         self.setObjectName("tokenManagerInterface")
         self.api_client = api_client
+        self.api_queue = api_queue
+        self.cache_manager = cache_manager
         self._current_token_id = None   # token currently shown in detail panel
         self._policies = []             # policies for current token
         self._setup_ui()
@@ -686,10 +776,10 @@ class TokenManagerInterface(QtWidgets.QWidget):
         self.setStyleSheet(container_qss())
 
         # Slide-in drawer panels (absolutely positioned overlays)
-        self._policy_panel = TokenPolicyPanel(self.api_client, parent=self)
+        self._policy_panel = TokenPolicyPanel(self.api_client, parent=self, api_queue=self.api_queue)
         self._policy_panel.save_done.connect(lambda: self._load_policies(self._current_token_id))
 
-        self._create_panel = CreateTokenPanel(self.api_client, parent=self)
+        self._create_panel = CreateTokenPanel(self.api_client, parent=self, api_queue=self.api_queue)
         self._create_panel.token_created.connect(self._load_tokens)
 
         # Delete confirmation drawer (slides from top, scoped to left panel)
@@ -896,9 +986,37 @@ class TokenManagerInterface(QtWidgets.QWidget):
         self._refresh_btn.setEnabled(False)
         self._new_btn.setEnabled(False)
 
-        worker = _Worker(self.api_client.list_tokens)
-        worker.signals.done.connect(self._on_tokens_loaded)
-        QThreadPool.globalInstance().start(worker)
+        # Cache-first: show cached data immediately while API fetches in background
+        if self.cache_manager:
+            cached, _ = self.cache_manager.get_cached_tokens()
+            if cached:
+                self._on_tokens_loaded(True, cached)
+                # If offline, stop here — don't enqueue an API call
+                if self.api_queue and self.api_queue.is_paused:
+                    return
+                # Otherwise fall through to enqueue a background refresh
+
+        # If offline with no cache, show empty state and stop
+        if self.api_queue and self.api_queue.is_paused:
+            self._on_tokens_loaded(False, "Offline — no cached tokens available")
+            return
+
+        if self.api_queue:
+            def _on_done(success, data):
+                self._on_tokens_loaded(success, data)
+
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="tokens",
+                action="Load tokens",
+                callable=self.api_client.list_tokens,
+                callback=_on_done,
+            )
+            self.api_queue.enqueue(item)
+        else:
+            worker = _Worker(self.api_client.list_tokens)
+            worker.signals.done.connect(self._on_tokens_loaded)
+            QThreadPool.globalInstance().start(worker)
 
     def _on_tokens_loaded(self, success, data):
         self._token_table.setEnabled(True)
@@ -911,6 +1029,8 @@ class TokenManagerInterface(QtWidgets.QWidget):
             return
 
         tokens = data if isinstance(data, list) else []
+        if tokens and self.cache_manager:
+            self.cache_manager.cache_tokens(tokens)
         self._token_count_label.setText(f"Total tokens: {len(tokens)}")
         self._token_table.setRowCount(0)
 
@@ -1022,8 +1142,7 @@ class TokenManagerInterface(QtWidgets.QWidget):
         self._save_btn.setEnabled(False)
         self._save_btn.setText("Saving…")
 
-        success, result = self.api_client.update_token(
-            self._current_token_id,
+        update_kwargs = dict(
             name=name,
             perm_create_domain=self._edit_perm_create.isChecked(),
             perm_delete_domain=self._edit_perm_delete.isChecked(),
@@ -1033,24 +1152,47 @@ class TokenManagerInterface(QtWidgets.QWidget):
             max_unused_period=max_unused,
             allowed_subnets=allowed_subnets,
         )
+        token_id = self._current_token_id
 
-        self._save_btn.setEnabled(True)
-        self._save_btn.setText("Save Changes")
+        def _handle_result(success, result):
+            self._save_btn.setEnabled(True)
+            self._save_btn.setText("Save Changes")
+            if success:
+                row = self._token_table.currentRow()
+                if row >= 0:
+                    name_item = self._token_table.item(row, 0)
+                    if name_item:
+                        name_item.setText(result.get('name', name))
+                        name_item.setData(Qt.ItemDataRole.UserRole, result)
+                        perm_item = self._token_table.item(row, 3)
+                        if perm_item:
+                            perm_item.setText(_perm_flags(result))
+            else:
+                msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                self._notify_drawer.error("Save Failed", f"Failed to save token:\n{msg}")
 
-        if success:
-            # Update the stored token data in the table row
-            row = self._token_table.currentRow()
-            if row >= 0:
-                name_item = self._token_table.item(row, 0)
-                if name_item:
-                    name_item.setText(result.get('name', name))
-                    name_item.setData(Qt.ItemDataRole.UserRole, result)
-                    perm_item = self._token_table.item(row, 3)
-                    if perm_item:
-                        perm_item.setText(_perm_flags(result))
+        if self.api_queue:
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="tokens",
+                action=f"Update token '{name}'",
+                callable=self.api_client.update_token,
+                args=(token_id,),
+                kwargs=update_kwargs,
+                callback=_handle_result,
+            )
+            self.api_queue.enqueue(item)
+
+            if self.api_queue.is_paused:
+                self._save_btn.setEnabled(True)
+                self._save_btn.setText("Save Changes")
+                self._notify_drawer.info(
+                    "Queued",
+                    f"Token update queued — will be sent when back online.",
+                )
         else:
-            msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-            self._notify_drawer.error("Save Failed", f"Failed to save token:\n{msg}")
+            success, result = self.api_client.update_token(token_id, **update_kwargs)
+            _handle_result(success, result)
 
     # ------------------------------------------------------------------
     # New / Delete token
@@ -1092,18 +1234,49 @@ class TokenManagerInterface(QtWidgets.QWidget):
             )
 
         def _do_delete():
-            errors = []
-            for token in tokens_to_delete:
-                success, result = self.api_client.delete_token(token['id'])
-                if not success:
-                    msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-                    errors.append(msg)
-            self._load_tokens()
-            self._current_token_id = None
-            self._set_detail_enabled(False)
-            self._set_policies_enabled(False)
-            if errors:
-                self._notify_drawer.error("Delete Failed", "\n".join(errors))
+            if self.api_queue:
+                pending = len(tokens_to_delete)
+                errors_list = []
+
+                def _make_cb(token_name):
+                    def _cb(success, result):
+                        nonlocal pending
+                        if not success:
+                            msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                            errors_list.append(msg)
+                        pending -= 1
+                        if pending <= 0:
+                            self._load_tokens()
+                            self._current_token_id = None
+                            self._set_detail_enabled(False)
+                            self._set_policies_enabled(False)
+                            if errors_list:
+                                self._notify_drawer.error("Delete Failed", "\n".join(errors_list))
+                    return _cb
+
+                for token in tokens_to_delete:
+                    item = QueueItem(
+                        priority=PRIORITY_NORMAL,
+                        category="tokens",
+                        action=f"Delete token '{token.get('name', token['id'])}'",
+                        callable=self.api_client.delete_token,
+                        args=(token['id'],),
+                        callback=_make_cb(token.get('name', '')),
+                    )
+                    self.api_queue.enqueue(item)
+            else:
+                errors = []
+                for token in tokens_to_delete:
+                    success, result = self.api_client.delete_token(token['id'])
+                    if not success:
+                        msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                        errors.append(msg)
+                self._load_tokens()
+                self._current_token_id = None
+                self._set_detail_enabled(False)
+                self._set_policies_enabled(False)
+                if errors:
+                    self._notify_drawer.error("Delete Failed", "\n".join(errors))
 
         self._delete_drawer.ask(
             title="Delete Token" if count == 1 else f"Delete {count} Tokens",
@@ -1121,15 +1294,46 @@ class TokenManagerInterface(QtWidgets.QWidget):
         self._policy_table.setRowCount(0)
         self._policies = []
 
-        worker = _Worker(self.api_client.list_token_policies, token_id)
-        worker.signals.done.connect(self._on_policies_loaded)
-        QThreadPool.globalInstance().start(worker)
+        # Cache-first: show cached policies immediately
+        if self.cache_manager:
+            cached, _ = self.cache_manager.get_cached_token_policies(token_id)
+            if cached:
+                self._on_policies_loaded(True, cached)
+                if self.api_queue and self.api_queue.is_paused:
+                    return
 
-    def _on_policies_loaded(self, success, data):
+        # Offline with no cache — show empty state
+        if self.api_queue and self.api_queue.is_paused:
+            self._on_policies_loaded(True, [])
+            return
+
+        if self.api_queue:
+            def _on_done(success, data):
+                self._on_policies_loaded(success, data, token_id=token_id)
+
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="tokens",
+                action=f"Load policies for token {token_id}",
+                callable=self.api_client.list_token_policies,
+                args=(token_id,),
+                callback=_on_done,
+            )
+            self.api_queue.enqueue(item)
+        else:
+            worker = _Worker(self.api_client.list_token_policies, token_id)
+            worker.signals.done.connect(
+                lambda success, data: self._on_policies_loaded(success, data, token_id=token_id)
+            )
+            QThreadPool.globalInstance().start(worker)
+
+    def _on_policies_loaded(self, success, data, token_id=None):
         if not success:
             return
 
         self._policies = data if isinstance(data, list) else []
+        if self._policies and self.cache_manager and token_id:
+            self.cache_manager.cache_token_policies(token_id, self._policies)
         self._policy_table.setRowCount(0)
 
         for policy in self._policies:
@@ -1217,18 +1421,48 @@ class TokenManagerInterface(QtWidgets.QWidget):
             for p in policies_to_delete
         ]
 
+        token_id = self._current_token_id
+
         def _do_delete():
-            errors = []
-            for policy in policies_to_delete:
-                success, result = self.api_client.delete_token_policy(
-                    self._current_token_id, policy['id']
-                )
-                if not success:
-                    msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
-                    errors.append(msg)
-            self._load_policies(self._current_token_id)
-            if errors:
-                self._notify_drawer.error("Delete Failed", "\n".join(errors))
+            if self.api_queue:
+                pending = len(policies_to_delete)
+                errors_list = []
+
+                def _make_cb():
+                    def _cb(success, result):
+                        nonlocal pending
+                        if not success:
+                            msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                            errors_list.append(msg)
+                        pending -= 1
+                        if pending <= 0:
+                            self._load_policies(token_id)
+                            if errors_list:
+                                self._notify_drawer.error("Delete Failed", "\n".join(errors_list))
+                    return _cb
+
+                for policy in policies_to_delete:
+                    item = QueueItem(
+                        priority=PRIORITY_NORMAL,
+                        category="tokens",
+                        action=f"Delete policy {policy['id']}",
+                        callable=self.api_client.delete_token_policy,
+                        args=(token_id, policy['id']),
+                        callback=_make_cb(),
+                    )
+                    self.api_queue.enqueue(item)
+            else:
+                errors = []
+                for policy in policies_to_delete:
+                    success, result = self.api_client.delete_token_policy(
+                        token_id, policy['id']
+                    )
+                    if not success:
+                        msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                        errors.append(msg)
+                self._load_policies(token_id)
+                if errors:
+                    self._notify_drawer.error("Delete Failed", "\n".join(errors))
 
         self._delete_drawer.ask(
             title=f"Delete {'Policy' if count == 1 else f'{count} Policies'}",

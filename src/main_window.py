@@ -20,7 +20,8 @@ from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, FluentIcon,
     isDarkTheme,
     PushButton, PrimaryPushButton, PasswordLineEdit,
-    SubtitleLabel, LargeTitleLabel,
+    SubtitleLabel, LargeTitleLabel, CaptionLabel,
+    InfoBar, InfoBarPosition,
 )
 
 from workers import LoadRecordsWorker
@@ -33,10 +34,15 @@ from search_replace_dialog import SearchReplaceInterface
 from token_manager_dialog import TokenManagerInterface
 from zone_list_widget import ZoneListWidget, AddZonePanel
 from fluent_styles import SPLITTER_QSS, container_qss
+from confirm_drawer import DeleteConfirmDrawer, ConfirmDrawer
 from notify_drawer import NotifyDrawer
 from record_widget import RecordWidget
 from log_widget import LogWidget
 from theme_manager import ThemeManager
+from api_queue import APIQueue, QueueItem, PRIORITY_HIGH, PRIORITY_NORMAL, PRIORITY_LOW
+from queue_interface import QueueInterface
+from version_manager import VersionManager
+from history_interface import HistoryInterface
 
 logger = logging.getLogger(__name__)
 
@@ -48,28 +54,76 @@ class AboutInterface(QtWidgets.QWidget):
         super().__init__(parent)
         self.setObjectName("aboutInterface")
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(36, 20, 36, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(36, 28, 36, 20)
+        layout.setSpacing(0)
 
-        layout.addWidget(LargeTitleLabel("About"))
+        # App name + version
+        layout.addWidget(LargeTitleLabel("deSEC DNS Manager"))
+        layout.addSpacing(4)
 
-        info = QtWidgets.QLabel()
-        info.setTextFormat(QtCore.Qt.TextFormat.RichText)
-        info.setOpenExternalLinks(True)
-        info.setWordWrap(True)
-        info.setText(
-            "<h3>deSEC DNS Manager</h3>"
-            "<p>A desktop application for managing DNS zones and records "
-            "using the <a href='https://desec.io'>deSEC</a> API.</p>"
-            "<p><b>Version</b> 0.12.1-beta</p>"
-            "<hr/>"
-            "<p><b>Author:</b> JD Bungart<br/>"
-            "<a href='mailto:me@jdneer.com'>me@jdneer.com</a><br/>"
-            "<a href='https://github.com/jaydio/desec-qt-dns'>github.com/jaydio/desec-qt-dns</a></p>"
-            "<hr/>"
-            "<p><small>Released under GNU General Public License v3</small></p>"
+        ver = CaptionLabel("v2.0.0-beta")
+        layout.addWidget(ver)
+        layout.addSpacing(16)
+
+        desc = QtWidgets.QLabel(
+            "A desktop application for managing DNS zones and records "
+            "via the deSEC dedicated DNS hosting API."
         )
-        layout.addWidget(info)
+        desc.setWordWrap(True)
+        desc.setStyleSheet("font-size: 13px;")
+        layout.addWidget(desc)
+        layout.addSpacing(20)
+
+        # Author section
+        author_lbl = QtWidgets.QLabel()
+        author_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        author_lbl.setOpenExternalLinks(True)
+        author_lbl.setWordWrap(True)
+        author_lbl.setText(
+            "<b style='font-size:13px;'>Author</b><br>"
+            "JD Bungart &mdash; "
+            "<a style='color:#5ba8f5;' href='mailto:me@jdneer.com'>me@jdneer.com</a><br>"
+            "<a style='color:#5ba8f5;' href='https://github.com/jaydio/desec-qt-dns'>"
+            "github.com/jaydio/desec-qt-dns</a>"
+        )
+        layout.addWidget(author_lbl)
+        layout.addSpacing(20)
+
+        # Built with section
+        built_lbl = QtWidgets.QLabel()
+        built_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        built_lbl.setOpenExternalLinks(True)
+        built_lbl.setWordWrap(True)
+        link = "color:#5ba8f5;"
+        built_lbl.setText(
+            "<b style='font-size:13px;'>Built with</b><br>"
+            f"<a style='{link}' href='https://www.python.org'>Python</a> &mdash; "
+            "programming language<br>"
+            f"<a style='{link}' href='https://doc.qt.io/qtforpython-6/'>PySide6 (Qt for Python)</a> &mdash; "
+            "cross-platform UI framework<br>"
+            f"<a style='{link}' href='https://github.com/zhiyiYo/PyQt-Fluent-Widgets'>PySide6-FluentWidgets</a> &mdash; "
+            "Fluent Design component library<br>"
+            f"<a style='{link}' href='https://desec.io'>deSEC</a> &mdash; "
+            "free, secure, dedicated DNS hosting<br>"
+            f"<a style='{link}' href='https://github.com/pyca/cryptography'>cryptography</a> &mdash; "
+            "Fernet token encryption<br>"
+            f"<a style='{link}' href='https://git-scm.com'>Git</a> &mdash; "
+            "zone version history backend"
+        )
+        layout.addWidget(built_lbl)
+        layout.addSpacing(20)
+
+        # License
+        license_lbl = QtWidgets.QLabel()
+        license_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        license_lbl.setOpenExternalLinks(True)
+        license_lbl.setText(
+            "<b style='font-size:13px;'>License</b><br>"
+            f"<a style='{link}' href='https://www.gnu.org/licenses/gpl-3.0.en.html'>"
+            "GNU General Public License v3</a>"
+        )
+        layout.addWidget(license_lbl)
+
         layout.addStretch()
 
     def showEvent(self, event):
@@ -297,6 +351,21 @@ class MainWindow(FluentWindow):
         self.theme_manager = ThemeManager(config_manager)
         self.thread_pool = QThreadPool()
 
+        # Central API queue — all API calls go through here
+        history_file = os.path.join(config_manager.CONFIG_DIR, "queue_history.json")
+        self.api_queue = APIQueue(
+            parent=self,
+            history_file=history_file,
+            history_limit=config_manager.get_queue_history_limit(),
+            persist=config_manager.get_queue_history_persist(),
+        )
+        self.api_queue.start()
+        self.api_queue.rate_limited.connect(self._on_rate_limited)
+        self._last_429_notify_time = 0
+
+        # Git-based zone versioning
+        self.version_manager = VersionManager()
+
         self.setup_ui()
 
         self.theme_manager.apply_theme()
@@ -329,8 +398,14 @@ class MainWindow(FluentWindow):
         self.log_interface = LogInterface(self.log_widget)
         self.about_interface = AboutInterface()
 
-        self.zone_list = ZoneListWidget(self.api_client, self.cache_manager)
-        self.record_widget = RecordWidget(self.api_client, self.cache_manager, self.config_manager)
+        self.zone_list = ZoneListWidget(
+            self.api_client, self.cache_manager,
+            api_queue=self.api_queue, version_manager=self.version_manager,
+        )
+        self.record_widget = RecordWidget(
+            self.api_client, self.cache_manager, self.config_manager,
+            api_queue=self.api_queue, version_manager=self.version_manager,
+        )
 
         self.zone_list.zone_selected.connect(self.on_zone_selected)
         self.zone_list.zone_added.connect(self.sync_data)
@@ -354,10 +429,12 @@ class MainWindow(FluentWindow):
         self.import_interface.zones_refresh_requested.connect(self._on_import_export_zones_refresh)
 
         self.search_replace_interface = SearchReplaceInterface(
-            self.api_client, self.cache_manager
+            self.api_client, self.cache_manager, api_queue=self.api_queue
         )
 
-        self.token_manager_interface = TokenManagerInterface(self.api_client)
+        self.token_manager_interface = TokenManagerInterface(
+            self.api_client, api_queue=self.api_queue, cache_manager=self.cache_manager
+        )
 
         self.profile_interface = ProfileInterface(self.profile_manager) if self.profile_manager else None
         if self.profile_interface:
@@ -379,6 +456,19 @@ class MainWindow(FluentWindow):
 
         # ── Sidebar: Account & config ──
         self.addSubInterface(self.token_manager_interface, FluentIcon.CERTIFICATE, "Tokens")
+
+        self.navigationInterface.addSeparator()
+
+        # ── Sidebar: Queue & History ──
+        self.queue_interface = QueueInterface(self.api_queue)
+        self.addSubInterface(self.queue_interface, FluentIcon.SEND_FILL, "Queue")
+
+        self.history_interface = HistoryInterface(self.version_manager, self.api_queue)
+        self.history_interface.restore_requested.connect(self._on_restore_requested)
+        self.addSubInterface(self.history_interface, FluentIcon.UPDATE, "History")
+
+        self.navigationInterface.addSeparator()
+
         if self.profile_interface:
             self.addSubInterface(self.profile_interface, FluentIcon.PEOPLE, "Profile")
         self.addSubInterface(self.settings_interface, FluentIcon.SETTING, "Settings")
@@ -424,6 +514,7 @@ class MainWindow(FluentWindow):
         # Wire settings page signals
         self.settings_interface.settings_applied.connect(self.update_sync_interval)
         self.settings_interface.settings_applied.connect(self._apply_debug_mode)
+        self.settings_interface.settings_applied.connect(self._apply_queue_settings)
         self.settings_interface.settings_applied.connect(
             lambda: self.check_api_connectivity(True)
         )
@@ -445,6 +536,10 @@ class MainWindow(FluentWindow):
 
         # Notification drawer (slides from top, full window width)
         self._notify_drawer = NotifyDrawer(parent=self)
+
+        # Confirmation drawers (slides from top)
+        self._delete_drawer = DeleteConfirmDrawer(parent=self)
+        self._confirm_drawer = ConfirmDrawer(parent=self)
 
         # Global keyboard shortcuts
         self._setup_shortcuts()
@@ -479,6 +574,11 @@ class MainWindow(FluentWindow):
         logger.info(f"Sync timer set to {interval_minutes} minutes")
         self.log_message(f"Sync timer set to {interval_minutes} minutes")
 
+    def _apply_queue_settings(self):
+        """Update queue persistence and retention from saved config."""
+        self.api_queue.set_persist(self.config_manager.get_queue_history_persist())
+        self.api_queue.set_history_limit(self.config_manager.get_queue_history_limit())
+
     def _apply_debug_mode(self):
         """Toggle root logger level based on the debug_mode setting."""
         enabled = self.config_manager.get_debug_mode()
@@ -501,26 +601,22 @@ class MainWindow(FluentWindow):
         if manual_check:
             self.log_message("Checking API connectivity...", "info")
 
-        class ConnectivitySignals(QtCore.QObject):
-            result_ready = QtCore.Signal(bool, bool)
+        def _on_done(success, data):
+            is_online = success and data is True
+            self._handle_connectivity_result(is_online, manual_check)
 
-        class ConnectivityWorker(QtCore.QRunnable):
-            def __init__(self, api_client, manual_check):
-                super().__init__()
-                self.api_client = api_client
-                self.manual_check = manual_check
-                self.signals = ConnectivitySignals()
-
-            def run(self):
-                is_online = self.api_client.check_connectivity()
-                self.signals.result_ready.emit(is_online, self.manual_check)
-
-        worker = ConnectivityWorker(self.api_client, manual_check)
-        worker.signals.result_ready.connect(self._handle_connectivity_result)
-        self.thread_pool.start(worker)
+        item = QueueItem(
+            priority=PRIORITY_HIGH,
+            category="general",
+            action="Check connectivity",
+            callable=self.api_client.check_connectivity,
+            callback=_on_done,
+        )
+        self.api_queue.enqueue(item)
 
     def _handle_connectivity_result(self, is_online, manual_check):
-        self.update_connection_status(is_online)
+        if not self.config_manager.get_offline_mode():
+            self.update_connection_status(is_online)
         if is_online:
             self._check_token_management_permission()
             self._fetch_account_limit()
@@ -531,46 +627,36 @@ class MainWindow(FluentWindow):
                 self.log_message("API connection check failed - API is unreachable", "error")
 
     def _fetch_account_limit(self):
-        class _AccountSignals(QtCore.QObject):
-            result_ready = QtCore.Signal(object)
+        def _on_done(success, data):
+            if success and isinstance(data, dict):
+                self._handle_account_limit(data.get("limit_domains"))
+            else:
+                self._handle_account_limit(None)
 
-        class _AccountWorker(QtCore.QRunnable):
-            def __init__(self, api_client):
-                super().__init__()
-                self.api_client = api_client
-                self.signals = _AccountSignals()
-
-            def run(self):
-                success, data = self.api_client.get_account_info()
-                if success and isinstance(data, dict):
-                    self.signals.result_ready.emit(data.get("limit_domains"))
-                else:
-                    self.signals.result_ready.emit(None)
-
-        worker = _AccountWorker(self.api_client)
-        worker.signals.result_ready.connect(self._handle_account_limit)
-        self.thread_pool.start(worker)
+        item = QueueItem(
+            priority=PRIORITY_HIGH,
+            category="general",
+            action="Fetch account limit",
+            callable=self.api_client.get_account_info,
+            callback=_on_done,
+        )
+        self.api_queue.enqueue(item)
 
     def _handle_account_limit(self, limit):
         self.zone_list.set_domain_limit(limit)
 
     def _check_token_management_permission(self):
-        class _PermSignals(QtCore.QObject):
-            result_ready = QtCore.Signal(bool)
+        def _on_done(success, data):
+            self._handle_token_perm_result(success)
 
-        class _PermWorker(QtCore.QRunnable):
-            def __init__(self, api_client):
-                super().__init__()
-                self.api_client = api_client
-                self.signals = _PermSignals()
-
-            def run(self):
-                success, _ = self.api_client.list_tokens()
-                self.signals.result_ready.emit(success)
-
-        worker = _PermWorker(self.api_client)
-        worker.signals.result_ready.connect(self._handle_token_perm_result)
-        self.thread_pool.start(worker)
+        item = QueueItem(
+            priority=PRIORITY_LOW,
+            category="tokens",
+            action="Check token permissions",
+            callable=self.api_client.list_tokens,
+            callback=_on_done,
+        )
+        self.api_queue.enqueue(item)
 
     def _handle_token_perm_result(self, has_permission):
         # Phase 5i will wire this to the Tokens nav item state
@@ -610,6 +696,71 @@ class MainWindow(FluentWindow):
         if is_offline:
             logger.warning("Offline mode enabled - Record and zone editing disabled")
 
+    # ── Rate-limit notification ─────────────────────────────────────────────
+
+    def _on_rate_limited(self, retry_after, message):
+        now = time.time()
+        # Debounce: one notification per 30 seconds max
+        if now - self._last_429_notify_time < 30:
+            return
+        self._last_429_notify_time = now
+
+        self.log_message(f"API rate limited — {message}", "warning")
+
+        if retry_after > 60:
+            # Go offline: pause queue, stop timers, disable editing
+            self._enter_rate_limit_cooldown(retry_after)
+
+            minutes = retry_after / 60
+            self._notify_drawer.warning(
+                "Daily Rate Limit Reached",
+                f"deSEC has throttled requests for ~{minutes:.0f} minutes.\n"
+                f"The app is now offline and will reconnect automatically.\n\n"
+                f"You can also reconnect manually via the sidebar.",
+            )
+        else:
+            self._notify_drawer.warning(
+                "API Rate Limited",
+                f"deSEC has throttled requests (HTTP 429).\n"
+                f"Auto-retrying after {retry_after:.0f}s wait.\n\n"
+                f"Consider reducing the rate limit in Settings.",
+            )
+
+        # Trigger adaptive throttle
+        self.api_client.adapt_rate_limit(retry_after)
+
+    def _enter_rate_limit_cooldown(self, retry_after):
+        """Transition the app to offline state during a long rate-limit cooldown."""
+        self.api_queue.pause()
+        self.keepalive_timer.stop()
+        self.sync_timer_id.stop()
+        self.update_connection_status(False)
+        self.update_record_edit_state()
+
+        self.log_message(
+            f"App going offline for ~{retry_after / 60:.0f} min (daily rate limit)", "warning"
+        )
+
+        resume_ms = int(retry_after * 1000)
+        QTimer.singleShot(resume_ms, self._resume_after_rate_limit)
+
+    def _resume_after_rate_limit(self):
+        """Auto-resume after a long rate-limit cooldown.
+        Restarts timers and attempts a connectivity check; the app only
+        goes back online once the check succeeds.
+        """
+        if self.config_manager.get_offline_mode():
+            return  # user toggled offline manually, don't override
+
+        self.log_message("Rate-limit cooldown expired — checking connectivity...", "info")
+        self.api_queue.resume()
+        self.keepalive_timer.start()
+        self.sync_timer_id.start()
+
+        # Don't flip to online immediately — let sync_data's callback
+        # set the connection status based on actual API response.
+        self.sync_data()
+
     # ── Data sync ────────────────────────────────────────────────────────────
 
     def sync_data(self):
@@ -623,16 +774,32 @@ class MainWindow(FluentWindow):
             self._load_zones_from_cache()
             return
 
+        # Cache-first: show cached zones immediately while API fetches in background
+        self._load_zones_from_cache()
+
         if hasattr(self, '_sync_nav_item'):
             self._sync_nav_item.setText("Syncing...")
 
-        from workers import LoadZonesWorker
-        worker = LoadZonesWorker(self.api_client, self.cache_manager)
-        worker.signals.finished.connect(self._on_zones_loaded)
-        self.thread_pool.start(worker)
+        def _sync_done(success, data):
+            if success and isinstance(data, list):
+                self.cache_manager.cache_zones(data)
+                self._on_zones_loaded(True, data, "")
+            else:
+                self._on_zones_loaded(False, [], str(data) if data else "Unknown error")
+
+        item = QueueItem(
+            priority=PRIORITY_HIGH,
+            category="zones",
+            action="Load zones",
+            callable=self.api_client.get_zones,
+            callback=_sync_done,
+        )
+        self.api_queue.enqueue(item)
 
     def _on_zones_loaded(self, success, zones, message):
-        self.update_connection_status(success)
+        # Don't override manual offline mode
+        if not self.config_manager.get_offline_mode():
+            self.update_connection_status(success)
         if success:
             self.last_sync_time = time.time()
             self._check_token_management_permission()
@@ -642,7 +809,10 @@ class MainWindow(FluentWindow):
             self.zone_list.zone_count_label.setText(
                 f"Total zones: {self.zone_list._zone_count_text(len(zones))}"
             )
-            if len(zones) > 0 and self.zone_list.zone_list_view.model().rowCount() > 0:
+            # Only auto-select the first zone if nothing is currently selected
+            # (avoids resetting the user's selection when a background refresh completes)
+            has_selection = self.zone_list.zone_list_view.selectionModel().hasSelection()
+            if not has_selection and len(zones) > 0 and self.zone_list.zone_list_view.model().rowCount() > 0:
                 first_index = self.zone_list.zone_list_view.model().index(0, 0)
                 self.zone_list.zone_list_view.selectionModel().select(
                     first_index,
@@ -672,6 +842,15 @@ class MainWindow(FluentWindow):
             zones, timestamp = cache_result
             if zones:
                 self.zone_list.handle_zones_result(True, zones, "Loaded from cache")
+                # Auto-select first zone if nothing is selected yet
+                has_selection = self.zone_list.zone_list_view.selectionModel().hasSelection()
+                if not has_selection and self.zone_list.zone_list_view.model().rowCount() > 0:
+                    first_index = self.zone_list.zone_list_view.model().index(0, 0)
+                    self.zone_list.zone_list_view.selectionModel().select(
+                        first_index,
+                        QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
+                    )
+                    self.zone_list.zone_list_view.setCurrentIndex(first_index)
                 self.log_message("Loaded data from cache", "info")
                 return
         self.log_message("No cached data available", "warning")
@@ -707,6 +886,108 @@ class MainWindow(FluentWindow):
         self.record_widget.update_records_table()
         self.sync_data()
         self.log_message("Zone deleted - records view cleared and data synced", "info")
+
+    def _on_restore_requested(self, domain_name: str, commit_hash: str):
+        """Restore a historical version of zone records via the API queue.
+
+        If the domain no longer exists on the account, it is created first.
+        """
+        records = self.version_manager.restore(domain_name, commit_hash)
+        if not records:
+            self.log_message(f"No records found for {domain_name} at {commit_hash[:8]}", "warning")
+            return
+
+        # Check whether the zone still exists on the account
+        zone_exists = any(
+            z.get("name") == domain_name for z in self.zone_list.zone_model.zones
+        )
+
+        if zone_exists:
+            self._enqueue_restore_records(domain_name, commit_hash, records)
+        else:
+            self.log_message(
+                f"Zone {domain_name} does not exist — creating before restore...", "info"
+            )
+            InfoBar.warning(
+                title="Zone not found",
+                content=f"'{domain_name}' does not exist on your account. "
+                        f"It will be created automatically before restoring records.",
+                parent=self,
+                duration=6000,
+                position=InfoBarPosition.TOP,
+            )
+
+            def _on_zone_created(success, data):
+                if success:
+                    self.log_message(f"Zone {domain_name} recreated", "success")
+                    InfoBar.success(
+                        title="Zone created",
+                        content=f"'{domain_name}' has been created. Restoring records...",
+                        parent=self,
+                        duration=4000,
+                        position=InfoBarPosition.TOP,
+                    )
+                    self.sync_data()
+                    self._enqueue_restore_records(domain_name, commit_hash, records)
+                else:
+                    self.log_message(f"Failed to create zone {domain_name}: {data}", "error")
+                    InfoBar.error(
+                        title="Zone creation failed",
+                        content=f"Could not create '{domain_name}': {data}",
+                        parent=self,
+                        duration=8000,
+                        position=InfoBarPosition.TOP,
+                    )
+
+            item = QueueItem(
+                priority=PRIORITY_HIGH,
+                category="zones",
+                action=f"Recreate zone {domain_name}",
+                callable=self.api_client.create_zone,
+                args=(domain_name,),
+                callback=_on_zone_created,
+            )
+            self.api_queue.enqueue(item)
+
+    def _enqueue_restore_records(self, domain_name, commit_hash, records):
+        """Enqueue a single bulk PUT to restore all record sets at once."""
+        self.log_message(
+            f"Restoring {len(records)} record sets for {domain_name} "
+            f"from version {commit_hash[:8]}...", "info"
+        )
+
+        # Build the array of RRset dicts the bulk PUT endpoint expects
+        rrsets = []
+        for rec in records:
+            rrsets.append({
+                "subname": rec.get("subname", ""),
+                "type": rec.get("type", ""),
+                "ttl": rec.get("ttl", 3600),
+                "records": rec.get("records", []),
+            })
+
+        def _on_restore_done(success, data):
+            if success:
+                self.log_message(
+                    f"Restore complete: {len(rrsets)} record sets restored "
+                    f"for {domain_name}", "success"
+                )
+            else:
+                self.log_message(
+                    f"Restore failed for {domain_name}: {data}", "error"
+                )
+            self.cache_manager.clear_domain_cache(domain_name)
+            self.record_widget.refresh_records()
+
+        item = QueueItem(
+            priority=PRIORITY_NORMAL,
+            category="records",
+            action=f"Restore {len(rrsets)} record sets for {domain_name}",
+            callable=self.api_client.bulk_replace_records,
+            args=(domain_name, rrsets),
+            callback=_on_restore_done,
+        )
+        self.api_queue.enqueue(item)
 
     # ── Dialogs ──────────────────────────────────────────────────────────────
 
@@ -766,19 +1047,12 @@ class MainWindow(FluentWindow):
         self.log_message("Changelog opened in browser", "info")
 
     def show_keyboard_shortcuts_dialog(self):
-        shortcuts_text = (
-            "<html><body>"
-            "<h3>Keyboard Shortcuts</h3>"
-            "<table>"
-            "<tr><td><b>F5</b></td><td>Sync Now</td></tr>"
-            "<tr><td><b>Ctrl+F</b></td><td>Cycle search fields</td></tr>"
-            "<tr><td><b>Ctrl+Q</b></td><td>Quit</td></tr>"
-            "<tr><td><b>Delete</b></td><td>Delete selected zone/record</td></tr>"
-            "<tr><td><b>Escape</b></td><td>Clear active search filter</td></tr>"
-            "</table>"
-            "</body></html>"
+        self._notify_drawer.info(
+            "Keyboard Shortcuts",
+            "F5 \u2014 Sync Now  |  Ctrl+F \u2014 Cycle search fields  |  "
+            "Ctrl+Q \u2014 Quit  |  Delete \u2014 Delete selected  |  "
+            "Escape \u2014 Clear search filter"
         )
-        QtWidgets.QMessageBox.information(self, "Keyboard Shortcuts", shortcuts_text)
 
     # ── Toggle actions ────────────────────────────────────────────────────────
 
@@ -789,8 +1063,14 @@ class MainWindow(FluentWindow):
         if is_offline:
             self.log_message("Offline mode enabled - Record editing disabled", "warning")
             self.update_connection_status(False)
+            self.api_queue.pause()
+            self.keepalive_timer.stop()
+            self.sync_timer_id.stop()
         else:
             self.log_message("Offline mode disabled - syncing...", "info")
+            self.api_queue.resume()
+            self.keepalive_timer.start()
+            self.sync_timer_id.start()
             self.sync_data()
         self.update_record_edit_state()
 
@@ -869,15 +1149,7 @@ class MainWindow(FluentWindow):
             )
 
     def clear_cache(self):
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Cache Clear",
-            "Are you sure you want to clear all cached data? "
-            "This will remove all local cache files and require a fresh sync.",
-            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-            QtWidgets.QMessageBox.StandardButton.No,
-        )
-        if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
+        def _do_clear():
             if self.cache_manager.clear_all_cache():
                 self.log_message("Cache cleared successfully. Initiating new sync...", "success")
                 self.sync_data()
@@ -885,6 +1157,14 @@ class MainWindow(FluentWindow):
                 self.log_message(
                     "Failed to clear cache completely. Some files may remain.", "error"
                 )
+
+        self._delete_drawer.ask(
+            title="Clear Cache",
+            message="Remove all local cache files? This will require a fresh sync.",
+            items=["Cached zones", "Cached records", "Cached tokens"],
+            on_confirm=_do_clear,
+            confirm_text="Clear Cache",
+        )
 
     # ── Keyboard events ──────────────────────────────────────────────────────
 
@@ -975,15 +1255,12 @@ class MainWindow(FluentWindow):
                 self.record_widget.filter_records("")
 
     def _confirm_quit_dialog(self):
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Quit",
-            "Are you sure you want to quit?",
-            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-            QtWidgets.QMessageBox.StandardButton.No,
+        self._confirm_drawer.ask(
+            title="Quit Application",
+            message="Are you sure you want to quit?",
+            on_confirm=self.close,
+            confirm_text="Quit",
         )
-        if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
-            self.close()
 
     def on_theme_type_changed(self, action):
         theme_type = action.data()
@@ -1020,7 +1297,12 @@ class MainWindow(FluentWindow):
             self._auth_panel.reposition(event.size())
         if hasattr(self, "_notify_drawer"):
             self._notify_drawer.reposition(event.size())
+        if hasattr(self, "_delete_drawer"):
+            self._delete_drawer.reposition(event.size())
+        if hasattr(self, "_confirm_drawer"):
+            self._confirm_drawer.reposition(event.size())
 
     def closeEvent(self, event):
         self.config_manager.save_config()
+        self.api_queue.stop()
         event.accept()

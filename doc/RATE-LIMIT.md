@@ -17,8 +17,10 @@ The deSEC Qt DNS Manager implements intelligent API rate limiting to:
 All API requests in the application go through a centralized rate limiting system:
 
 ```
-Any Component → APIClient.method() → _make_request() → _apply_rate_limit() → HTTP Request
+Any Component → api_queue.enqueue(item) → APIQueue thread → APIClient.method() → _make_request() → _apply_rate_limit() → HTTP Request
 ```
+
+The central API queue (`api_queue.py`) processes requests sequentially with priority ordering. When a 429 response is received, the queue either auto-retries (wait <= 60s) or enters cooldown mode (wait > 60s). See [API-NOTES.md](./API-NOTES.md) for full details.
 
 The rate limiting is implemented at the lowest level (`_make_request()`) ensuring that **every single API call** is automatically rate-limited, including:
 - Manual user actions (create/edit/delete records)
@@ -50,10 +52,10 @@ if time_since_last < min_interval:
 
 ### Accessing Rate Limit Settings
 
-1. **Open Configuration Dialog**: `File → Configuration...`
-2. **Locate API Rate Limit**: Find the "API Rate Limit" field
-3. **Adjust Value**: Use the spinner or type directly
-4. **Apply Changes**: Click "OK" to save
+1. Open the **Settings** sidebar page
+2. Find the **API Rate Limit** field in the Synchronization group
+3. Adjust the value using the spinner or type directly
+4. Click **Save** to apply
 
 ### Rate Limit Options
 
@@ -61,7 +63,7 @@ if time_since_last < min_interval:
 |---------|----------|----------|
 | **0.5 req/sec** | Very conservative, 2-second delays | Large bulk imports, slow connections |
 | **1.0 req/sec** | Conservative, 1-second delays | Standard bulk imports |
-| **2.0 req/sec** | **Default**, 0.5-second delays | Balanced performance and reliability |
+| **1.0 req/sec** | **Default**, 1.0-second delays | Balanced performance and reliability |
 | **5.0 req/sec** | Aggressive, 0.2-second delays | Small imports, fast connections |
 | **10.0 req/sec** | Maximum, 0.1-second delays | Testing, very fast connections |
 | **0 (No limit)** | Unlimited, no delays | Local development, testing only |
@@ -197,7 +199,7 @@ Rate limit settings are:
 - **Stored**: In user configuration file (`~/.config/desecqt/config.json`)
 - **Persistent**: Survives application restarts
 - **Profile-Specific**: Different settings per profile
-- **Default**: 2.0 requests per second
+- **Default**: 1.0 requests per second
 
 ## Best Practices
 
@@ -233,13 +235,9 @@ The rate limiting system helps ensure compliance with deSEC API guidelines:
 - **Improves Reliability**: Reduces likelihood of rate limit errors
 - **Good Citizenship**: Shares API resources fairly with other users
 
-## Future Enhancements
+## Adaptive Rate Limiting
 
-Potential improvements to the rate limiting system:
-- **Adaptive Rate Limiting**: Automatically adjust based on API response times
-- **Per-Operation Limits**: Different rates for different types of operations
-- **Burst Allowance**: Allow short bursts while maintaining average rate
-- **API Response Monitoring**: Adjust rates based on API health indicators
+The application now includes adaptive rate limiting. When a 429 response is received, `api_client.adapt_rate_limit()` halves the current rate limit (floor: 0.25 req/sec). This persists until the next settings save, allowing the app to self-heal after hitting API limits.
 
 ---
 

@@ -211,6 +211,27 @@ class SettingsInterface(ScrollArea):
 
         right_col.addWidget(appearance_group)
 
+        # ── Right: Queue ─────────────────────────────────────────────────
+        queue_group = SettingCardGroup("Queue", container)
+
+        self._queue_persist_card = _SwitchCard(
+            FluentIcon.SAVE, "Persist Queue History",
+            "Keep completed queue items across app restarts",
+            queue_group,
+        )
+        queue_group.addSettingCard(self._queue_persist_card)
+
+        self._queue_limit_card = _SpinBoxCard(
+            FluentIcon.HISTORY, "History Retention",
+            "Maximum number of queue history entries to keep",
+            100, 50000, " entries",
+            queue_group,
+        )
+        self._queue_limit_card.spin_box.setSingleStep(500)
+        queue_group.addSettingCard(self._queue_limit_card)
+
+        right_col.addWidget(queue_group)
+
         # ── Right: Advanced ──────────────────────────────────────────────
         advanced_group = SettingCardGroup("Advanced", container)
 
@@ -263,17 +284,18 @@ class SettingsInterface(ScrollArea):
             self.config_manager.get_setting('api_rate_limit', 2.0)
         )
         self._debug_card.setChecked(self.config_manager.get_debug_mode())
+        self._queue_persist_card.setChecked(self.config_manager.get_queue_history_persist())
+        self._queue_limit_card.spin_box.setValue(self.config_manager.get_queue_history_limit())
 
         if self.theme_manager:
             theme_type = self.config_manager.get_theme_type()
             idx = _THEME_OPTIONS.index(theme_type) if theme_type in _THEME_OPTIONS else 0
             self._theme_card.combo.setCurrentIndex(idx)
 
-        # Show a masked token hint in the card subtitle
+        # Show token status without revealing any characters
         token = self.config_manager.get_auth_token()
         if token:
-            masked = token[:6] + "…" if len(token) > 6 else "•••"
-            self._token_card.contentLabel.setText(f"Token configured: {masked}")
+            self._token_card.contentLabel.setText("Token configured")
         else:
             self._token_card.contentLabel.setText("No token configured — click to add one")
 
@@ -296,6 +318,8 @@ class SettingsInterface(ScrollArea):
         self.config_manager.set_sync_interval(self._sync_interval_card.spin_box.value())
         self.config_manager.set_setting('api_rate_limit', self._rate_limit_card.spin_box.value())
         self.config_manager.set_debug_mode(self._debug_card.isChecked())
+        self.config_manager.set_queue_history_persist(self._queue_persist_card.isChecked())
+        self.config_manager.set_queue_history_limit(self._queue_limit_card.spin_box.value())
 
         if self.theme_manager:
             theme_type = _THEME_OPTIONS[self._theme_card.combo.currentIndex()]

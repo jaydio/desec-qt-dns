@@ -20,6 +20,7 @@ from qfluentwidgets import (
 from fluent_styles import container_qss
 from confirm_drawer import DeleteConfirmDrawer
 from workers import LoadZonesWorker
+from api_queue import QueueItem, PRIORITY_HIGH, PRIORITY_NORMAL
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,8 @@ class ZoneListWidget(QtWidgets.QWidget):
     add_zone_requested = Signal()    # Emitted when user clicks Add Zone
     log_message = Signal(str, str)   # Emitted to log messages (message, level)
 
-    def __init__(self, api_client, cache_manager, parent=None):
+    def __init__(self, api_client, cache_manager, parent=None, api_queue=None,
+                 version_manager=None):
         """
         Initialize the zone list widget.
 
@@ -263,11 +265,15 @@ class ZoneListWidget(QtWidgets.QWidget):
             api_client: API client instance
             cache_manager: Cache manager instance
             parent: Parent widget, if any
+            api_queue: Central API queue (optional, falls back to direct calls)
+            version_manager: Git-based zone versioning (optional)
         """
         super(ZoneListWidget, self).__init__(parent)
 
         self.api_client = api_client
         self.cache_manager = cache_manager
+        self.api_queue = api_queue
+        self.version_manager = version_manager
         self.zones = []
         self.thread_pool = QThreadPool.globalInstance()
         self.loading_indicator = None
@@ -559,13 +565,30 @@ class ZoneListWidget(QtWidgets.QWidget):
 
         self.log_message.emit(f"Adding zone {zone_name}...", "info")
 
-        success, response = self.api_client.create_zone(zone_name)
+        if self.api_queue:
+            def _on_done(success, data):
+                if success:
+                    self.log_message.emit(f"Zone {zone_name} added successfully", "success")
+                    self.zone_added.emit()
+                else:
+                    self.log_message.emit(f"Failed to add zone: {data}", "error")
 
-        if success:
-            self.log_message.emit(f"Zone {zone_name} added successfully", "success")
-            self.zone_added.emit()
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="zones",
+                action=f"Add zone {zone_name}",
+                callable=self.api_client.create_zone,
+                args=(zone_name,),
+                callback=_on_done,
+            )
+            self.api_queue.enqueue(item)
         else:
-            self.log_message.emit(f"Failed to add zone: {response}", "error")
+            success, response = self.api_client.create_zone(zone_name)
+            if success:
+                self.log_message.emit(f"Zone {zone_name} added successfully", "success")
+                self.zone_added.emit()
+            else:
+                self.log_message.emit(f"Failed to add zone: {response}", "error")
 
     def _on_selection_changed(self):
         """Update button state and counter when zone selection changes."""
@@ -610,9 +633,46 @@ class ZoneListWidget(QtWidgets.QWidget):
             confirm_text = f"Delete {count} Zones"
 
         def _execute_delete():
-            for zone_name in zones:
-                self.delete_zone(zone_name, quiet=True)
-            self.zone_deleted.emit()
+            if self.api_queue:
+                # Track completions — only emit zone_deleted once all finish
+                pending = [count]
+
+                def _make_cb(zname):
+                    def _cb(success, data):
+                        if success:
+                            self.log_message.emit(f"Zone {zname} deleted successfully", "success")
+                            self.cache_manager.clear_domain_cache(zname)
+                            self._remove_zone_from_model(zname)
+                        else:
+                            self.log_message.emit(f"Failed to delete zone: {data}", "error")
+                        pending[0] -= 1
+                        if pending[0] <= 0:
+                            self.zone_deleted.emit()
+                    return _cb
+
+                for zone_name in zones:
+                    # Snapshot before delete
+                    if self.version_manager:
+                        cached_records, _ = self.cache_manager.get_cached_records(zone_name)
+                        if cached_records:
+                            self.version_manager.snapshot(
+                                zone_name, cached_records,
+                                "Pre-delete snapshot (zone destroyed)",
+                            )
+
+                    item = QueueItem(
+                        priority=PRIORITY_NORMAL,
+                        category="zones",
+                        action=f"Delete zone {zone_name}",
+                        callable=self.api_client.delete_zone,
+                        args=(zone_name,),
+                        callback=_make_cb(zone_name),
+                    )
+                    self.api_queue.enqueue(item)
+            else:
+                for zone_name in zones:
+                    self.delete_zone(zone_name, quiet=True)
+                self.zone_deleted.emit()
 
         self._delete_drawer.ask(
             title=title,
@@ -648,6 +708,27 @@ class ZoneListWidget(QtWidgets.QWidget):
             self.validate_dnssec_btn.setEnabled(n_selected > 0)
 
 
+    def _remove_zone_from_model(self, zone_name):
+        """Remove a zone from the model by name and refresh the view."""
+        self.zone_model.beginResetModel()
+        self.zone_model.zones = [
+            z for z in self.zone_model.zones if z.get("name") != zone_name
+        ]
+        self.zone_model._zone_name_cache.clear()
+        self.zone_model.apply_filter()
+        self.zone_model.endResetModel()
+
+        total = len(self.zone_model.zones)
+        filtered = self.zone_model.rowCount()
+        if self.search_field.text():
+            self.zone_count_label.setText(
+                f"Showing {filtered} of {self._zone_count_text(total)} zones"
+            )
+        else:
+            self.zone_count_label.setText(
+                f"Total zones: {self._zone_count_text(total)}"
+            )
+
     def on_zone_double_clicked(self, index):
         """Handle double click on a zone item.
 
@@ -674,12 +755,41 @@ class ZoneListWidget(QtWidgets.QWidget):
         """
         self.log_message.emit(f"Deleting zone: {zone_name}", "info")
 
-        success, response = self.api_client.delete_zone(zone_name)
+        # Snapshot current records before deletion so the zone can be restored
+        if self.version_manager:
+            cached_records, _ = self.cache_manager.get_cached_records(zone_name)
+            if cached_records:
+                self.version_manager.snapshot(
+                    zone_name, cached_records,
+                    f"Pre-delete snapshot (zone destroyed)",
+                )
 
-        if success:
-            self.log_message.emit(f"Zone {zone_name} deleted successfully", "success")
-            self.cache_manager.clear_domain_cache(zone_name)
-            if not quiet:
-                self.zone_deleted.emit()
+        if self.api_queue:
+            def _on_done(success, data):
+                if success:
+                    self.log_message.emit(f"Zone {zone_name} deleted successfully", "success")
+                    self.cache_manager.clear_domain_cache(zone_name)
+                    self._remove_zone_from_model(zone_name)
+                    if not quiet:
+                        self.zone_deleted.emit()
+                else:
+                    self.log_message.emit(f"Failed to delete zone: {data}", "error")
+
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="zones",
+                action=f"Delete zone {zone_name}",
+                callable=self.api_client.delete_zone,
+                args=(zone_name,),
+                callback=_on_done,
+            )
+            self.api_queue.enqueue(item)
         else:
-            self.log_message.emit(f"Failed to delete zone: {response}", "error")
+            success, response = self.api_client.delete_zone(zone_name)
+            if success:
+                self.log_message.emit(f"Zone {zone_name} deleted successfully", "success")
+                self.cache_manager.clear_domain_cache(zone_name)
+                if not quiet:
+                    self.zone_deleted.emit()
+            else:
+                self.log_message.emit(f"Failed to delete zone: {response}", "error")

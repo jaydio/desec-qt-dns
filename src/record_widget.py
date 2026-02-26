@@ -16,6 +16,7 @@ from qfluentwidgets import (PushButton, PrimaryPushButton, SearchLineEdit, Table
 
 from confirm_drawer import DeleteConfirmDrawer
 from workers import LoadRecordsWorker
+from api_queue import QueueItem, PRIORITY_NORMAL, PRIORITY_LOW
 
 logger = logging.getLogger(__name__)
 
@@ -100,12 +101,17 @@ class _BulkDeleteWorker(QThread):
 
 def _validate_record_content(record_type, content):
     """Validate a single DNS record value. Returns (is_valid, error_message)."""
+    import ipaddress as _ipaddress
     if not content.strip():
         return False, "Record content cannot be empty"
     if record_type in ['TXT', 'SPF']:
         if not (content.startswith('"') and content.endswith('"')):
             return False, f'{record_type} records must be enclosed in double quotes'
-        if '\"' not in content and content.count('"') > 2:
+        # Check for unescaped quotes inside the outer pair
+        inner = content[1:-1]
+        import re as _re
+        unescaped = _re.findall(r'(?<!\\)"', inner)
+        if unescaped:
             return False, f'Quotes within {record_type} content must be escaped with backslash'
     elif record_type in ['CNAME', 'MX', 'NS', 'PTR', 'DNAME']:
         if not content.strip().endswith('.'):
@@ -128,7 +134,9 @@ def _validate_record_content(record_type, content):
         except ValueError:
             return False, 'Invalid IPv4 address format'
     elif record_type == 'AAAA':
-        if ':' not in content:
+        try:
+            _ipaddress.IPv6Address(content.strip())
+        except ValueError:
             return False, 'Invalid IPv6 address format'
     elif record_type == 'SRV':
         parts = content.strip().split()
@@ -167,9 +175,11 @@ class RecordEditPanel(QtWidgets.QWidget):
     cancelled  = Signal()           # emitted on Cancel
     log_signal = Signal(str, str)   # (message, level) forwarded to RecordWidget.log_message
 
-    def __init__(self, api_client, parent=None):
+    def __init__(self, api_client, parent=None, api_queue=None, version_manager=None):
         super().__init__(parent)
         self.api_client = api_client
+        self.api_queue = api_queue
+        self.version_manager = version_manager
         self._domain    = None
         self._record    = None      # None = add mode, dict = edit mode
         self._animation = None
@@ -468,6 +478,11 @@ class RecordEditPanel(QtWidgets.QWidget):
         self.cancelled.emit()
 
     def _on_done(self):
+        # Double-click guard: ignore if already processing
+        if not self._done_btn.isEnabled():
+            return
+        self._done_btn.setEnabled(False)
+
         subname = self._subname_input.text().strip()
         record_type = self._type_combo.currentText()
         if ' (' in record_type:
@@ -478,12 +493,14 @@ class RecordEditPanel(QtWidgets.QWidget):
 
         if not records:
             self._set_status("⚠ Please enter at least one record value.", "warning")
+            self._done_btn.setEnabled(True)
             return
 
         for rec in records:
             ok, msg = _validate_record_content(record_type, rec)
             if not ok:
                 self._set_status(f"⚠ {msg}", "warning")
+                self._done_btn.setEnabled(True)
                 return
 
         if record_type in ('TXT', 'SPF'):
@@ -492,42 +509,101 @@ class RecordEditPanel(QtWidgets.QWidget):
                 for r in records
             ]
 
-        self._done_btn.setEnabled(False)
         self._done_btn.setText("Saving…")
 
-        if self._record:
-            success, response = self.api_client.update_record(
-                self._domain, subname, record_type, ttl, records
-            )
-        else:
-            success, response = self.api_client.create_record(
-                self._domain, subname, record_type, ttl, records
-            )
+        is_edit = bool(self._record)
+        domain = self._domain
 
-        self._done_btn.setEnabled(True)
-        self._done_btn.setText("Done")
+        if self.api_queue:
+            api_method = self.api_client.update_record if is_edit else self.api_client.create_record
+            op = "updated" if is_edit else "created"
 
-        if success:
-            op = "updated" if self._record else "created"
-            self.log_signal.emit(
-                f"Successfully {op} {record_type} record for '{subname or '@'}' in {self._domain}",
-                "success",
-            )
-            self.slide_out()
-            self.save_done.emit()
-        else:
-            if isinstance(response, dict) and 'message' in response:
-                error_msg = response['message']
-                raw = response.get('raw_response', {})
-                if 'non_field_errors' in raw and isinstance(raw['non_field_errors'], list):
-                    detail = '\n'.join(raw['non_field_errors'])
+            def _on_done_callback(success, response):
+                self._done_btn.setEnabled(True)
+                self._done_btn.setText("Done")
+                if success:
+                    if self.version_manager and domain:
+                        # Grab parent widget's records for the snapshot
+                        parent = self.parent()
+                        recs = getattr(parent, 'records', None)
+                        if recs:
+                            self.version_manager.snapshot(
+                                domain, recs,
+                                f"{op.capitalize()} {record_type} record for '{subname or '@'}'",
+                            )
+                    self.log_signal.emit(
+                        f"Successfully {op} {record_type} record for '{subname or '@'}' in {domain}",
+                        "success",
+                    )
+                    self.slide_out()
+                    self.save_done.emit()
                 else:
-                    detail = error_msg
-                self.log_signal.emit(f"API Error: {error_msg}\nDetails: {raw}", "error")
-                self._set_status(f"⚠ API error: {detail}", "error")
+                    self._handle_save_error(response)
+
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="records",
+                action=f"{'Update' if is_edit else 'Create'} {record_type} for {subname or '@'} in {domain}",
+                callable=api_method,
+                args=(domain, subname, record_type, ttl, records),
+                callback=_on_done_callback,
+            )
+            self.api_queue.enqueue(item)
+
+            # If the queue is paused (offline / rate-limited), don't hang —
+            # restore the button and close the panel immediately.
+            # The item stays queued and will be processed when the queue resumes.
+            if self.api_queue.is_paused:
+                self._done_btn.setEnabled(True)
+                self._done_btn.setText("Done")
+                op_verb = "Update" if is_edit else "Create"
+                self._set_status(
+                    f"Queued: {op_verb} {record_type} — will be sent when back online.", "info"
+                )
+                self.log_signal.emit(
+                    f"Queued (offline): {op_verb} {record_type} for "
+                    f"'{subname or '@'}' in {domain}",
+                    "info",
+                )
+                self.slide_out()
+        else:
+            if is_edit:
+                success, response = self.api_client.update_record(
+                    self._domain, subname, record_type, ttl, records
+                )
             else:
-                self._set_status(f"⚠ Failed: {response}", "error")
-                self.log_signal.emit(f"API Error: {response}", "error")
+                success, response = self.api_client.create_record(
+                    self._domain, subname, record_type, ttl, records
+                )
+
+            self._done_btn.setEnabled(True)
+            self._done_btn.setText("Done")
+
+            if success:
+                op = "updated" if is_edit else "created"
+                self.log_signal.emit(
+                    f"Successfully {op} {record_type} record for '{subname or '@'}' in {self._domain}",
+                    "success",
+                )
+                self.slide_out()
+                self.save_done.emit()
+            else:
+                self._handle_save_error(response)
+
+    def _handle_save_error(self, response):
+        """Handle API error from record save."""
+        if isinstance(response, dict) and 'message' in response:
+            error_msg = response['message']
+            raw = response.get('raw_response', {})
+            if 'non_field_errors' in raw and isinstance(raw['non_field_errors'], list):
+                detail = '\n'.join(raw['non_field_errors'])
+            else:
+                detail = error_msg
+            self.log_signal.emit(f"API Error: {error_msg}\nDetails: {raw}", "error")
+            self._set_status(f"⚠ API error: {detail}", "error")
+        else:
+            self._set_status(f"⚠ Failed: {response}", "error")
+            self.log_signal.emit(f"API Error: {response}", "error")
 
 
 class RecordWidget(QtWidgets.QWidget):
@@ -751,18 +827,23 @@ class RecordWidget(QtWidgets.QWidget):
         },
     }
     
-    def __init__(self, api_client, cache_manager, config_manager=None, parent=None):
+    def __init__(self, api_client, cache_manager, config_manager=None, parent=None,
+                 api_queue=None, version_manager=None):
         """
         Initialize the record widget.
         :param api_client: API client instance
         :param cache_manager: Cache manager instance
         :param config_manager: Configuration manager instance for settings (optional)
         :param parent: Parent widget
+        :param api_queue: Central API queue (optional)
+        :param version_manager: Git-based zone versioning (optional)
         """
         super().__init__(parent)
         self.api_client = api_client
         self.cache_manager = cache_manager
         self.config_manager = config_manager
+        self.api_queue = api_queue
+        self.version_manager = version_manager
         self.current_domain = None
         self.records = []
         self.is_online = True  # Start assuming we are online
@@ -771,7 +852,7 @@ class RecordWidget(QtWidgets.QWidget):
         self.show_multiline = False  # Default value
         if self.config_manager:
             self.show_multiline = self.config_manager.get_show_multiline_records()
-        
+
         self.threadpool = QThreadPool()
         self.setup_ui()
     
@@ -915,7 +996,10 @@ class RecordWidget(QtWidgets.QWidget):
         layout.addLayout(actions_layout)
 
         # Slide-in edit panel (absolutely positioned overlay — not part of the layout)
-        self.edit_panel = RecordEditPanel(self.api_client, parent=self)
+        self.edit_panel = RecordEditPanel(
+            self.api_client, parent=self,
+            api_queue=self.api_queue, version_manager=self.version_manager,
+        )
         self.edit_panel.save_done.connect(self._on_record_saved)
         self.edit_panel.log_signal.connect(self.log_message)
 
@@ -1032,11 +1116,29 @@ class RecordWidget(QtWidgets.QWidget):
         else:
             self.log_message.emit(f"No cached records for {self.current_domain}", "warning")
     def fetch_records_async(self):
-        """Fetch records asynchronously using a worker thread."""
-        # Create and start a worker to fetch records in background
-        worker = LoadRecordsWorker(self.api_client, self.current_domain, self.cache_manager)
-        worker.signals.finished.connect(self.handle_records_result)
-        self.threadpool.start(worker)
+        """Fetch records asynchronously using the queue or a worker thread."""
+        domain = self.current_domain
+        if self.api_queue and domain:
+            def _on_done(success, data):
+                if success and isinstance(data, list):
+                    self.cache_manager.cache_records(domain, data)
+                    self.handle_records_result(True, data, domain, "")
+                else:
+                    self.handle_records_result(False, [], domain, str(data) if data else "")
+
+            item = QueueItem(
+                priority=PRIORITY_LOW,
+                category="records",
+                action=f"Load records for {domain}",
+                callable=self.api_client.get_records,
+                args=(domain,),
+                callback=_on_done,
+            )
+            self.api_queue.enqueue(item)
+        else:
+            worker = LoadRecordsWorker(self.api_client, self.current_domain, self.cache_manager)
+            worker.signals.finished.connect(self.handle_records_result)
+            self.threadpool.start(worker)
         
     def handle_records_result(self, success, records, zone_name, error_msg):
         """Handle the result of asynchronous record loading.
@@ -1106,10 +1208,12 @@ class RecordWidget(QtWidgets.QWidget):
                 name_item.setToolTip(timestamp_tooltip)
             self.records_table.setItem(row, COL_NAME, name_item)
 
-            # Type column
+            # Type column — medium weight + colored
             record_type = record.get('type', '')
             type_item = QtWidgets.QTableWidgetItem(record_type)
-            type_item.setFont(QtGui.QFont(self.font().family(), -1, QtGui.QFont.Weight.Medium))
+            f = type_item.font()
+            f.setWeight(QtGui.QFont.Weight.Medium)
+            type_item.setFont(f)
             if record_type in _TYPE_COLORS:
                 light_c, dark_c = _TYPE_COLORS[record_type]
                 type_item.setForeground(QtGui.QColor(dark_c if isDarkTheme() else light_c))
@@ -1357,10 +1461,42 @@ class RecordWidget(QtWidgets.QWidget):
 
         def _do_bulk_delete():
             self._set_bulk_busy(True)
-            self._bulk_worker = _BulkDeleteWorker(self.api_client, self.current_domain, records)
-            self._bulk_worker.record_done.connect(self._on_bulk_record_done)
-            self._bulk_worker.finished.connect(self._on_bulk_delete_finished)
-            self._bulk_worker.start()
+            if self.api_queue:
+                self._bulk_pending = len(records)
+                self._bulk_deleted = 0
+                self._bulk_failed = 0
+                domain = self.current_domain
+                for rec in records:
+                    sub = rec.get('subname', '') or ''
+                    rt = rec.get('type', '')
+                    label = f"{sub or '@'} {rt}"
+
+                    def _make_cb(lbl):
+                        def _cb(success, data):
+                            self._on_bulk_record_done(success, lbl)
+                            if success:
+                                self._bulk_deleted += 1
+                            else:
+                                self._bulk_failed += 1
+                            self._bulk_pending -= 1
+                            if self._bulk_pending <= 0:
+                                self._on_bulk_delete_finished(self._bulk_deleted, self._bulk_failed)
+                        return _cb
+
+                    item = QueueItem(
+                        priority=PRIORITY_NORMAL,
+                        category="records",
+                        action=f"Delete {rt} for {sub or '@'} in {domain}",
+                        callable=self.api_client.delete_record,
+                        args=(domain, sub, rt),
+                        callback=_make_cb(label),
+                    )
+                    self.api_queue.enqueue(item)
+            else:
+                self._bulk_worker = _BulkDeleteWorker(self.api_client, self.current_domain, records)
+                self._bulk_worker.record_done.connect(self._on_bulk_record_done)
+                self._bulk_worker.finished.connect(self._on_bulk_delete_finished)
+                self._bulk_worker.start()
 
         self._delete_drawer.ask(
             title="Delete Records",
@@ -1393,39 +1529,67 @@ class RecordWidget(QtWidgets.QWidget):
 
     def delete_record_by_ref(self, record):
         """Delete a record by reference instead of by row index.
-        
+
         Args:
             record (dict): The record object to delete
         """
         if not self.is_online or not record:
             return
-        
+
         # Get record details
         subname = record.get('subname', '')
-        type = record.get('type', '')
-        
+        rtype = record.get('type', '')
         record_name = subname or '@'
+        domain = self.current_domain
 
         def _do_delete():
             record_content = "\n".join(record.get('records', ['<empty>']))
             ttl = record.get('ttl', 0)
             self.log_message.emit(
-                f"Deleting {type} record for '{record_name}' with TTL: {ttl}, content: {record_content}", "info"
+                f"Deleting {rtype} record for '{record_name}' with TTL: {ttl}, content: {record_content}", "info"
             )
-            success, response = self.api_client.delete_record(self.current_domain, subname, type)
-            if success:
-                self.log_message.emit(
-                    f"Successfully deleted {type} record for '{record_name}' with TTL: {ttl}", "success"
+
+            if self.api_queue:
+                def _on_done(success, response):
+                    if success:
+                        if self.version_manager and domain:
+                            self.version_manager.snapshot(
+                                domain, self.records,
+                                f"Delete {rtype} record for '{record_name}'"
+                            )
+                        self.log_message.emit(
+                            f"Successfully deleted {rtype} record for '{record_name}' with TTL: {ttl}", "success"
+                        )
+                        self.cache_manager.clear_domain_cache(domain)
+                        self.records_changed.emit()
+                        self.refresh_records()
+                    else:
+                        self.log_message.emit(f"Failed to delete record: {response}", "error")
+
+                item = QueueItem(
+                    priority=PRIORITY_NORMAL,
+                    category="records",
+                    action=f"Delete {rtype} for {record_name} in {domain}",
+                    callable=self.api_client.delete_record,
+                    args=(domain, subname, rtype),
+                    callback=_on_done,
                 )
-                self.cache_manager.clear_domain_cache(self.current_domain)
-                self.records_changed.emit()
-                self.refresh_records()
+                self.api_queue.enqueue(item)
             else:
-                self.log_message.emit(f"Failed to delete record: {response}", "error")
+                success, response = self.api_client.delete_record(domain, subname, rtype)
+                if success:
+                    self.log_message.emit(
+                        f"Successfully deleted {rtype} record for '{record_name}' with TTL: {ttl}", "success"
+                    )
+                    self.cache_manager.clear_domain_cache(domain)
+                    self.records_changed.emit()
+                    self.refresh_records()
+                else:
+                    self.log_message.emit(f"Failed to delete record: {response}", "error")
 
         self._delete_drawer.ask(
             title="Delete Record",
-            message=f"Delete the {type} record for '{record_name}'?",
+            message=f"Delete the {rtype} record for '{record_name}'?",
             on_confirm=_do_delete,
             confirm_text="Delete Record",
         )

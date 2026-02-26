@@ -73,7 +73,32 @@ This document outlines planned features and improvements for future releases of 
   - [x] Optimized UI layout that adapts to number of available zones
   - [x] Enhanced documentation in doc/IMPORT_EXPORT.md
 
-- [ ] **Record Creation Wizards**  
+- [x] **Fluent Design UI Overhaul** (in v2.0.0-beta)
+  Complete migration from PyQt6 to PySide6 + PySide6-FluentWidgets with Fluent Design System.
+  - [x] FluentWindow with sidebar navigation (replaces menu bar)
+  - [x] Slide-in panels for all forms — records, zones, tokens, profiles (replaces popup dialogs)
+  - [x] Two-step confirmation drawers for destructive actions (replaces QMessageBox)
+  - [x] Notification drawers for errors, warnings, and success messages
+  - [x] Theme-aware styling throughout (dark/light/auto)
+
+- [x] **Central API Queue** (in v2.0.0-beta)
+  All API calls processed through a central background queue thread.
+  - [x] Priority-based processing (High / Normal / Low)
+  - [x] Auto-retry on transient 429 rate-limit responses (up to 3 retries)
+  - [x] Adaptive rate limiting — halves rate on 429, self-heals over time
+  - [x] Cooldown mode for extended rate limits (>60s) with auto-resume
+  - [x] Queue monitor sidebar page (pending, history, detail view, batch retry)
+  - [x] Persistent queue history (configurable, JSON)
+
+- [x] **Git-Based Zone Version History** (in v2.0.0-beta)
+  Automatic zone versioning backed by a local Git repository.
+  - [x] Snapshot committed on every record mutation (create, update, delete)
+  - [x] Version history sidebar page with commit timeline per zone
+  - [x] Record preview for any historical version
+  - [x] One-click restore via bulk API PUT
+  - [x] Delete version history per zone
+
+- [ ] **Record Creation Wizards**
   Guided setup for common DNS record configurations, including:
   - [ ] Google Workspace / Gmail
   - [ ] Cloudflare

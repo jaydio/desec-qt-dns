@@ -53,13 +53,13 @@ The deSEC API accepts these as an array of record values (`records` field). By d
 ### Adding a Record
 
 1. Select a zone from the zone list
-2. Click **Add Record**
+2. Click **Add Record** — the RecordEditPanel slides in from the right (440 px)
 3. Fill in:
    - **Type** — choose from the dropdown (format hint updates automatically)
    - **Subname** — leave blank for apex (`@`), or enter e.g. `www`, `mail`
    - **TTL** — select a preset
    - **Content** — one value per line; see format hint below the field
-4. Click **OK**
+4. Click **Done** — the record is created via the API queue and a version snapshot is committed
 
 ### Editing a Record
 
@@ -67,8 +67,9 @@ The deSEC API accepts these as an array of record values (`records` field). By d
 2. Either:
    - Click **Edit** in the Actions column for that row
    - Double-click the row
-3. Modify as needed
-4. Click **OK**
+3. The RecordEditPanel slides in with the current values pre-filled
+4. Modify as needed
+5. Click **Done** — the record is updated and a version snapshot is committed
 
 ### Deleting a Single Record
 
@@ -76,7 +77,7 @@ The deSEC API accepts these as an array of record values (`records` field). By d
 2. Either:
    - Click **Delete** in the Actions column
    - Select the row and press the **Delete** key
-3. Confirm the deletion dialog
+3. Confirm deletion in the two-step DeleteConfirmDrawer
 
 ### Batch Deleting Records
 
@@ -84,7 +85,7 @@ The deSEC API accepts these as an array of record values (`records` field). By d
    - Use **Select All** to check all visible rows
    - Use **Select None** to uncheck all
 2. Click **Delete Selected (N)** (red button — count updates live)
-3. Confirm the bulk deletion dialog
+3. Confirm in the two-step DeleteConfirmDrawer
 4. A background worker deletes each record and logs success/failure individually
 5. The table refreshes automatically when complete
 

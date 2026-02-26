@@ -5,13 +5,13 @@
 The application uses a two-layer logging system:
 
 1. **Python `logging` module** — writes structured records to `~/.config/desecqt/logs/` and the console (debug mode)
-2. **Log Console widget** — in-window panel at the bottom of the main window with colour-coded, timestamped entries
+2. **Log Console widget** — sidebar page with colour-coded, timestamped entries
 
 ---
 
 ## Log Console
 
-The log console is toggled via **View → Show Log Console**.
+The log console is accessible via the **Log Console** item in the sidebar (bottom section).
 
 ### Severity Colours
 
@@ -113,7 +113,7 @@ Format:
 2026-02-23 06:05:19,421 - cache_manager - DEBUG - Cached 5 zones (L1 + L2 + L3)
 ```
 
-Enable **debug mode** (**File → Settings → Enable debug mode**) to include `DEBUG`-level entries.
+Enable **debug mode** (Settings sidebar page → Debug Mode toggle) to include `DEBUG`-level entries.
 
 ---
 

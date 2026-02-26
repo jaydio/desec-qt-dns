@@ -8,12 +8,23 @@ Provides methods for managing DNS zones and records.
 
 import json
 import logging
+import re
 import requests
 from datetime import datetime
 import time
 from threading import Lock
 
 logger = logging.getLogger(__name__)
+
+
+class RateLimitResponse:
+    """Sentinel returned by _make_request on HTTP 429.
+    Carries retry_after so the queue can auto-wait and retry.
+    """
+    def __init__(self, retry_after, message, raw_response):
+        self.retry_after = retry_after   # seconds to wait
+        self.message = message           # human-readable
+        self.raw_response = raw_response # parsed JSON body
 
 class APIClient:
     """Client for the deSEC API that handles requests and responses."""
@@ -108,6 +119,13 @@ class APIClient:
             else:
                 return False, f"Unsupported HTTP method: {method}"
             
+            # Intercept 429 before raise_for_status so the queue can retry
+            if response.status_code == 429:
+                retry_after = self._parse_retry_after(response)
+                msg = self._extract_429_message(response)
+                logger.warning("Rate limited (429): retry after %.1fs — %s", retry_after, msg)
+                return False, RateLimitResponse(retry_after, msg, self._safe_json(response))
+
             # Check if request was successful
             response.raise_for_status()
             
@@ -175,6 +193,69 @@ class APIClient:
             logger.error(self.last_error)
             return False, f"An unexpected error occurred: {str(e)}"
     
+    def _parse_retry_after(self, response):
+        """Extract wait time from a 429 response.
+        Checks Retry-After header first, then parses the JSON body for
+        'Expected available in N second(s)', defaults to 5.0.
+        """
+        # Retry-After header (seconds or HTTP-date — we only handle seconds)
+        header = response.headers.get("Retry-After")
+        if header:
+            try:
+                return max(float(header), 0.5)
+            except (ValueError, TypeError):
+                pass
+
+        # Parse body text for deSEC's "Expected available in N second(s)"
+        try:
+            text = response.text
+        except Exception:
+            return 5.0
+
+        match = re.search(r"Expected available in\s+([\d.]+)\s+second", text)
+        if match:
+            try:
+                return max(float(match.group(1)), 0.5)
+            except (ValueError, TypeError):
+                pass
+
+        return 5.0
+
+    def _extract_429_message(self, response):
+        """Extract a human-readable message from a 429 response body."""
+        try:
+            data = response.json()
+            if isinstance(data, dict) and "detail" in data:
+                return data["detail"]
+        except (ValueError, AttributeError):
+            pass
+        try:
+            return response.text[:200]
+        except Exception:
+            return "Rate limited (HTTP 429)"
+
+    def _safe_json(self, response):
+        """Best-effort response.json(), fallback to truncated text."""
+        try:
+            return response.json()
+        except (ValueError, AttributeError):
+            try:
+                return {"text": response.text[:500]}
+            except Exception:
+                return {}
+
+    def adapt_rate_limit(self, retry_after):
+        """Halve the current rate limit (double the interval) after a 429.
+        Floor at 0.25 req/s (4-second interval).  The new value is written
+        to config in memory and persists on the next save_config().
+        """
+        with self._rate_limit_lock:
+            current = self.config_manager.get_setting('api_rate_limit', 2.0)
+            new_limit = max(current / 2.0, 0.25)
+            if new_limit < current:
+                self.config_manager.set_setting('api_rate_limit', new_limit)
+                logger.info("Adaptive throttle: rate limit %.2f → %.2f req/s", current, new_limit)
+
     def check_connectivity(self):
         """
         Check if the API is reachable and authentication is valid.
@@ -301,7 +382,27 @@ class APIClient:
             endpoint = f'/domains/{domain_name}/rrsets/{subname}/{type}/'
             
         return self._make_request('PATCH', endpoint, data)
-    
+
+    def bulk_replace_records(self, domain_name, rrsets):
+        """
+        Create or replace multiple RRsets in a single API call (PUT bulk).
+
+        Uses PUT on the bulk /rrsets/ endpoint, which creates RRsets that
+        don't exist and updates those that do.  Each RRset dict must
+        contain subname, type, ttl, and records.
+
+        Args:
+            domain_name (str): Domain name
+            rrsets (list[dict]): List of RRset dicts, each with
+                subname, type, ttl, records keys.
+
+        Returns:
+            tuple: (success, response data or error message)
+        """
+        return self._make_request(
+            'PUT', f'/domains/{domain_name}/rrsets/', rrsets
+        )
+
     def delete_record(self, domain_name, subname, type):
         """
         Delete a DNS record.

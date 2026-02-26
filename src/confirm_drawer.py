@@ -29,35 +29,36 @@ _MIN_HEIGHT = 120
 _MAX_HEIGHT = 280
 
 
-class DeleteConfirmDrawer(QtWidgets.QWidget):
-    """Top-sliding drawer with two-step delete confirmation.
+class _BaseConfirmDrawer(QtWidgets.QWidget):
+    """Base top-sliding two-step confirmation drawer.
 
-    Step 1: [Cancel] [Delete]  — standard layout
-    Step 2: [Delete] [Cancel]  — swapped to prevent muscle-memory clicks
+    Step 1: [Cancel] [Confirm]  — standard layout
+    Step 2: [Confirm] [Cancel]  — swapped to prevent muscle-memory clicks
 
-    Usage::
-
-        drawer = DeleteConfirmDrawer(parent=self)
-
-        drawer.ask(
-            title="Delete Zone",
-            message="Permanently delete 'example.com'?",
-            items=["example.com"],
-            on_confirm=lambda: self.api.delete_zone("example.com"),
-            confirm_text="Delete Zone",
-        )
+    Subclasses set ``_icon``, ``_icon_color``, ``_btn_object_name``,
+    ``_btn_bg`` / ``_btn_hover`` / ``_btn_pressed`` to theme themselves.
     """
 
     confirmed = QtCore.Signal()
     cancelled = QtCore.Signal()
 
+    # Subclasses override these class-level attributes
+    _object_name = "confirmDrawer"
+    _icon = FluentIcon.DELETE
+    _icon_color = "#e04040"
+    _btn_object_name = "confirmActionBtn"
+    _btn_bg = "rgba(200,40,40,0.9)"
+    _btn_hover = "rgba(220,50,50,0.95)"
+    _btn_pressed = "rgba(170,30,30,0.95)"
+    _step2_message = "Are you sure? This action cannot be undone."
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("deleteConfirmDrawer")
+        self.setObjectName(self._object_name)
         self._animation = None
         self._on_confirm = None
         self._step = 1
-        self._confirm_text = "Delete"
+        self._confirm_text = "Confirm"
         self._title = ""
         self._message = ""
         self.hide()
@@ -84,7 +85,7 @@ class DeleteConfirmDrawer(QtWidgets.QWidget):
         icon_label = QtWidgets.QLabel()
         icon_label.setFixedSize(32, 32)
         icon_label.setPixmap(
-            FluentIcon.DELETE.icon(color=QtGui.QColor("#e04040")).pixmap(28, 28)
+            self._icon.icon(color=QtGui.QColor(self._icon_color)).pixmap(28, 28)
         )
         icon_label.setAlignment(Qt.AlignmentFlag.AlignTop)
         content_row.addWidget(icon_label)
@@ -115,13 +116,13 @@ class DeleteConfirmDrawer(QtWidgets.QWidget):
         self._cancel_btn = PushButton("Cancel")
         self._cancel_btn.clicked.connect(self._on_cancel_clicked)
 
-        self._delete_btn = PushButton("Delete")
-        self._delete_btn.setObjectName("deleteConfirmBtn")
-        self._delete_btn.clicked.connect(self._on_delete_clicked)
+        self._action_btn = PushButton("Confirm")
+        self._action_btn.setObjectName(self._btn_object_name)
+        self._action_btn.clicked.connect(self._on_action_clicked)
 
-        # Step 1 layout: Cancel | Delete
+        # Step 1 layout: Cancel | Confirm
         self._btn_row.addWidget(self._cancel_btn)
-        self._btn_row.addWidget(self._delete_btn)
+        self._btn_row.addWidget(self._action_btn)
 
         root.addLayout(self._btn_row)
 
@@ -131,27 +132,27 @@ class DeleteConfirmDrawer(QtWidgets.QWidget):
         esc.activated.connect(self._on_cancel_clicked)
 
     def _set_button_order(self, step):
-        """Rearrange buttons: step 1 = Cancel|Delete, step 2 = Delete|Cancel."""
+        """Rearrange buttons: step 1 = Cancel|Action, step 2 = Action|Cancel."""
         self._btn_row.removeWidget(self._cancel_btn)
-        self._btn_row.removeWidget(self._delete_btn)
+        self._btn_row.removeWidget(self._action_btn)
         if step == 1:
             self._btn_row.addWidget(self._cancel_btn)
-            self._btn_row.addWidget(self._delete_btn)
+            self._btn_row.addWidget(self._action_btn)
         else:
-            self._btn_row.addWidget(self._delete_btn)
+            self._btn_row.addWidget(self._action_btn)
             self._btn_row.addWidget(self._cancel_btn)
 
     # ── public API ─────────────────────────────────────────────────────
 
-    def ask(self, title, message, items=None, on_confirm=None, confirm_text="Delete"):
+    def ask(self, title, message, items=None, on_confirm=None, confirm_text="Confirm"):
         """Show the drawer with the given content.
 
         Args:
-            title:        Drawer heading (e.g. "Delete Zone").
+            title:        Drawer heading.
             message:      Descriptive text.
             items:        Optional list of item labels to show as bullets.
             on_confirm:   Callable invoked when the user confirms.
-            confirm_text: Label for the destructive button.
+            confirm_text: Label for the action button.
         """
         # disconnect any previous callback
         self._disconnect_confirm()
@@ -178,19 +179,19 @@ class DeleteConfirmDrawer(QtWidgets.QWidget):
         else:
             self._items_label.hide()
 
-        self._delete_btn.setText(confirm_text)
+        self._action_btn.setText(confirm_text)
         self._step = 1
         self._set_button_order(1)
         self.slide_in()
 
     # ── callbacks ──────────────────────────────────────────────────────
 
-    def _on_delete_clicked(self):
+    def _on_action_clicked(self):
         if self._step == 1:
             # Advance to step 2: swap buttons, escalate message
             self._step = 2
             self._title_label.setText(f"Confirm {self._title}")
-            self._message_label.setText("Are you sure? This action cannot be undone.")
+            self._message_label.setText(self._step2_message)
             self._items_label.hide()
             self._set_button_order(2)
             # Resize drawer to fit new (shorter) content
@@ -225,27 +226,23 @@ class DeleteConfirmDrawer(QtWidgets.QWidget):
     # ── animation ──────────────────────────────────────────────────────
 
     def slide_in(self):
-        dark = isDarkTheme()
-        delete_bg = "rgba(200,40,40,0.9)"
-        delete_hover = "rgba(220,50,50,0.95)"
-        delete_pressed = "rgba(170,30,30,0.95)"
         self.setStyleSheet(
             f"QWidget#{self.objectName()} {{"
             f"  border-bottom: 1px solid rgba(128,128,128,0.35);"
             f"}}"
             + container_qss()
-            + f"PushButton#deleteConfirmBtn {{"
-            f"  background: {delete_bg};"
+            + f"PushButton#{self._btn_object_name} {{"
+            f"  background: {self._btn_bg};"
             f"  color: white;"
             f"  border: none;"
             f"  border-radius: 5px;"
             f"  padding: 5px 16px;"
             f"}}"
-            f"PushButton#deleteConfirmBtn:hover {{"
-            f"  background: {delete_hover};"
+            f"PushButton#{self._btn_object_name}:hover {{"
+            f"  background: {self._btn_hover};"
             f"}}"
-            f"PushButton#deleteConfirmBtn:pressed {{"
-            f"  background: {delete_pressed};"
+            f"PushButton#{self._btn_object_name}:pressed {{"
+            f"  background: {self._btn_pressed};"
             f"}}"
         )
 
@@ -297,3 +294,83 @@ class DeleteConfirmDrawer(QtWidgets.QWidget):
         if not self.isVisible():
             return
         self.setGeometry(0, 0, parent_size.width(), self.height())
+
+
+class DeleteConfirmDrawer(_BaseConfirmDrawer):
+    """Red-themed two-step delete confirmation drawer.
+
+    Usage::
+
+        drawer = DeleteConfirmDrawer(parent=self)
+
+        drawer.ask(
+            title="Delete Zone",
+            message="Permanently delete 'example.com'?",
+            items=["example.com"],
+            on_confirm=lambda: self.api.delete_zone("example.com"),
+            confirm_text="Delete Zone",
+        )
+    """
+
+    _object_name = "deleteConfirmDrawer"
+    _icon = FluentIcon.DELETE
+    _icon_color = "#e04040"
+    _btn_object_name = "deleteConfirmBtn"
+    _btn_bg = "rgba(200,40,40,0.9)"
+    _btn_hover = "rgba(220,50,50,0.95)"
+    _btn_pressed = "rgba(170,30,30,0.95)"
+    _step2_message = "Are you sure? This action cannot be undone."
+
+
+class RestoreConfirmDrawer(_BaseConfirmDrawer):
+    """Amber-themed two-step restore confirmation drawer.
+
+    Usage::
+
+        drawer = RestoreConfirmDrawer(parent=self)
+
+        drawer.ask(
+            title="Restore Version",
+            message="Restore 'example.com' to version abc12345?",
+            items=["3 A records", "1 MX record"],
+            on_confirm=lambda: do_restore(),
+            confirm_text="Restore",
+        )
+    """
+
+    _object_name = "restoreConfirmDrawer"
+    _icon = FluentIcon.INFO
+    _icon_color = "#e8a838"
+    _btn_object_name = "restoreConfirmBtn"
+    _btn_bg = "rgba(210,150,30,0.9)"
+    _btn_hover = "rgba(230,165,40,0.95)"
+    _btn_pressed = "rgba(180,130,20,0.95)"
+    _step2_message = "Are you sure? This will overwrite the current live DNS records."
+
+
+class ConfirmDrawer(_BaseConfirmDrawer):
+    """Blue-themed two-step general confirmation drawer.
+
+    Used for non-destructive but consequential confirmations such as
+    quit, switch profile, apply bulk changes, or import records.
+
+    Usage::
+
+        drawer = ConfirmDrawer(parent=self)
+
+        drawer.ask(
+            title="Switch Profile",
+            message="Switch to 'production'? The app will restart.",
+            on_confirm=lambda: do_switch(),
+            confirm_text="Switch",
+        )
+    """
+
+    _object_name = "confirmDrawer"
+    _icon = FluentIcon.INFO
+    _icon_color = "#4a9eff"
+    _btn_object_name = "confirmBtn"
+    _btn_bg = "rgba(50,120,220,0.9)"
+    _btn_hover = "rgba(60,140,240,0.95)"
+    _btn_pressed = "rgba(40,100,190,0.95)"
+    _step2_message = "Are you sure you want to proceed?"
