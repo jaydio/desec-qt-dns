@@ -1,6 +1,6 @@
 # deSEC Qt DNS Manager
 
-![deSEC DNS Manager - Main Window](img/main_window.png)
+![deSEC DNS Manager - Main Window](img/01_dark_main_window.png)
 
 A PySide6 desktop application with Fluent Design for managing DNS zones and records via the [deSEC](https://desec.io) DNS API.
 
