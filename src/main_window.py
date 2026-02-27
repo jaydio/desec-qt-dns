@@ -61,7 +61,7 @@ class AboutInterface(QtWidgets.QWidget):
         layout.addWidget(LargeTitleLabel("deSEC DNS Manager"))
         layout.addSpacing(4)
 
-        ver = CaptionLabel("v2.0.0-beta")
+        ver = CaptionLabel("v1.0.0-beta")
         layout.addWidget(ver)
         layout.addSpacing(16)
 

@@ -5,13 +5,36 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0-beta] - 2026-02-26
+## [1.0.0-beta] - 2026-02-27
 
-### Added in 2.0.0-beta
+### Added in 1.0.0-beta
 
-- **Fluent Design UI overhaul** — complete migration from PyQt6 to PySide6 + PySide6-FluentWidgets with Fluent Design System
+- **DNSSEC sidebar page** (`dnssec_interface.py`) — read-only DS + DNSKEY key viewer for any zone
+  - Zone selector dropdown; data fetched on demand via API queue (never cached)
+  - DS Format card: all digest variants (SHA-256, SHA-384, etc.) in a single card with bold digest-type labels when multiple variants are present
+  - DNSKEY Format card: Flags, Protocol, Algorithm, and full Public Key field
+  - Copy button per card copies the full record string to clipboard
+  - Validate DNSSEC setup shortcuts to Verisign Debugger and DNSViz
+  - `get_zone()` added to `APIClient` for fetching full zone data including DNSSEC key material
+
+- **InfoBar toasts** — auto-dismissing colour-coded notifications anchored to the top-centre of the main window
+  - Replaces `NotifyDrawer` for all API operation feedback across every sidebar page
+  - Variants: success (green, 4 s), info (blue, 3 s), warning (amber, 5 s), error (red, 8 s)
+  - All calls use `parent=self.window()` for consistent top-centre positioning regardless of which sub-widget triggers them
+
+- **Type and TTL filter fields** — two dedicated inputs added to the right of the main record search bar
+  - Type filter (≈ 90 px): narrows records by type (e.g. "A", "MX", "TXT")
+  - TTL filter (≈ 80 px): narrows records by TTL value
+  - All three filters AND'd via `_apply_filters()`; each field is independent
+
+- **Alphabetical sorting** — all list views now sorted A→Z on load
+  - Zone list (`ZoneListModel.update_zones()`)
+  - Version history zone list (`HistoryInterface._refresh_zones()`)
+  - Token list (`TokenManagerInterface._on_tokens_loaded()`)
+
+- **Fluent Design UI overhaul** — complete migration from PyQt6 to PySide6 + PySide6-FluentWidgets
   - FluentWindow shell with sidebar navigation replaces the traditional menu bar
-  - Sidebar items: DNS, Search & Replace, Import, Export, Tokens, Queue, History, Profile, Settings (top); About, Log Console, Sync, Connection Status, Last Sync (bottom)
+  - Sidebar items: DNS, DNSSEC, Search, Import, Export, Queue, History, Profile, Tokens, Settings (top); About, Log Console, Sync, Connection Status, Last Sync (bottom)
   - Configurable sidebar width (180 px expanded)
 
 - **Slide-in panels** — all form dialogs replaced with animated right-side overlay panels (220 ms, QPropertyAnimation)
@@ -27,14 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - DeleteConfirmDrawer (red) for destructive actions: delete zone, delete record, delete profile, clear cache
   - RestoreConfirmDrawer (amber) for restore/overwrite actions: restore zone version
   - ConfirmDrawer (blue) for general confirmations: quit, switch profile, apply replace, import records
-  - NotifyDrawer for error, warning, info, and success notifications
   - Two-step confirmation with button-swap prevents accidental destructive clicks
 
 - **Central API queue** (`api_queue.py`) — all API calls processed through a background QThread
   - QueueItem dataclass with priority (HIGH=0, NORMAL=1, LOW=2), category, action, callable, callback
   - Sequential processing with FIFO ordering within priority tier
-  - Auto-retry on transient HTTP 429 responses (retry_after <= 60s, up to 3 retries)
-  - Cooldown mode for extended rate limits (retry_after > 60s): pauses queue, stops timers, auto-resumes
+  - Auto-retry on transient HTTP 429 responses (retry_after ≤ 60 s, up to 3 retries)
+  - Cooldown mode for extended rate limits (retry_after > 60 s): pauses queue, stops timers, auto-resumes
   - Adaptive rate limiting: `adapt_rate_limit()` halves rate on 429 (floor 0.25 req/s)
   - Callback dispatch to main thread via Qt Signal for thread-safe UI updates
   - Pause/resume support (used by offline mode and rate-limit cooldown)
@@ -51,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `restore()` retrieves records from any historical version
 
 - **Version history browser** (`history_interface.py`) — sidebar page for browsing and restoring zone versions
-  - Zone list showing all versioned zones
+  - Zone list showing all versioned zones (sorted alphabetically)
   - Commit timeline with date, message, and truncated hash
   - Record preview in BIND-style format for any selected version
   - Restore button with RestoreConfirmDrawer confirmation; uses bulk PUT via API queue
@@ -69,25 +91,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **New documentation** — `doc/API-NOTES.md` covering the API queue, rate limiting, 429 handling, and all deSEC endpoints used
 
-### Changed in 2.0.0-beta
+### Changed in 1.0.0-beta
 
 - **Tech stack** — migrated from PyQt6 to PySide6 + PySide6-FluentWidgets
-- **Navigation** — sidebar replaces the traditional menu bar; all pages accessible as sidebar items
+- **Notifications** — `NotifyDrawer` superseded by `InfoBar` toasts; `notify_drawer.py` retained for reference
+- **Navigation** — sidebar replaces the traditional menu bar; "Search & Replace" renamed to "Search"; DNSSEC page added between DNS and Search; Tokens moved below Profile
+- **Token policy save** — panel slides out immediately on submit; errors surfaced via InfoBar toast
+- **Token list** — sorted alphabetically; policy table sortable by any column; Delete Policy button shows selected row count
 - **Record editing** — slide-in RecordEditPanel replaces the Record QDialog popup
 - **Profile management** — ProfileFormPanel slide-in replaces CreateProfileDialog and RenameProfileDialog popups; ConfirmDrawer replaces QMessageBox for switch confirmation
-- **Import confirmation** — ConfirmDrawer replaces QMessageBox.question
-- **Search & Replace confirmation** — ConfirmDrawer replaces QMessageBox.question
-- **Cache clear confirmation** — DeleteConfirmDrawer replaces QMessageBox.question
-- **Quit confirmation** — ConfirmDrawer replaces QMessageBox.question
-- **Keyboard shortcuts info** — NotifyDrawer replaces QMessageBox.information
+- **Import/Export/Search/Settings confirmations** — ConfirmDrawer and DeleteConfirmDrawer replace all QMessageBox popups
 - **Default sync interval** — changed from 10 to 15 minutes
 - **Default rate limit** — changed from 2.0 to 1.0 req/sec
 - **Cache layers** — simplified to memory + JSON (pickle layer removed)
-- **Theme system** — simplified to dark/light/auto via qfluentwidgets `setTheme()` (no per-theme ID selectors)
+- **Theme system** — simplified to dark/light/auto via `qfluentwidgets.setTheme()`
 
-### Technical Improvements in 2.0.0-beta
+### Technical Improvements in 1.0.0-beta
 
-- 25 source modules (up from 18), all under `src/`
+- 26 source modules (up from 18), all under `src/`
 - `config_dialog.py` deleted — superseded by `settings_interface.py`
 - `auth_dialog.py` deprecated — replaced by `AuthPanel` in `main_window.py`
 - All `pyqtSignal` → `Signal`, all `PyQt6` imports → `PySide6`
