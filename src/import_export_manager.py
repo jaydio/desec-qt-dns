@@ -203,11 +203,16 @@ class ImportExportManager:
             zone_data = self.cache_manager.get_zone_by_name(zone_name)
             if not zone_data:
                 return False, f"Zone '{zone_name}' not found in cache"
-            
-            # Get records
+
+            # Get records — try cache first, fall back to API
             records, _ = self.cache_manager.get_cached_records(zone_name)
             if not records:
-                return False, f"No records found for zone '{zone_name}'"
+                success, api_records = self.api_client.get_records(zone_name)
+                if success and api_records:
+                    records = api_records
+                    self.cache_manager.cache_records(zone_name, records)
+                else:
+                    return False, f"No records found for zone '{zone_name}'"
             
             # Export based on format
             if format_type == 'json':
@@ -448,7 +453,10 @@ class ImportExportManager:
             if line.startswith('$ORIGIN'):
                 zone_name = line.split()[1].rstrip('.')
             elif line.startswith('$TTL'):
-                default_ttl = int(line.split()[1])
+                try:
+                    default_ttl = int(line.split()[1])
+                except (ValueError, IndexError):
+                    logger.warning(f"Malformed $TTL directive, using default: {line!r}")
             else:
                 # Parse record line
                 parts = line.split()
@@ -505,28 +513,36 @@ class ImportExportManager:
             if line.startswith('+'):  # A record
                 parts = line[1:].split(':')
                 if len(parts) >= 3:
-                    fqdn, ip, ttl = parts[0], parts[1], parts[2] or '3600'
+                    fqdn, ip, ttl_str = parts[0], parts[1], parts[2] or '3600'
+                    try:
+                        ttl_val = int(ttl_str)
+                    except (ValueError, TypeError):
+                        ttl_val = 3600
                     if not zone_name:
                         zone_name = '.'.join(fqdn.split('.')[1:])
                     subname = fqdn.split('.')[0] if '.' in fqdn else ''
                     records.append({
                         'subname': subname,
                         'type': 'A',
-                        'ttl': int(ttl),
+                        'ttl': ttl_val,
                         'records': [ip]
                     })
-            
+
             elif line.startswith('C'):  # CNAME record
                 parts = line[1:].split(':')
                 if len(parts) >= 3:
-                    fqdn, target, ttl = parts[0], parts[1], parts[2] or '3600'
+                    fqdn, target, ttl_str = parts[0], parts[1], parts[2] or '3600'
+                    try:
+                        ttl_val = int(ttl_str)
+                    except (ValueError, TypeError):
+                        ttl_val = 3600
                     if not zone_name:
                         zone_name = '.'.join(fqdn.split('.')[1:])
                     subname = fqdn.split('.')[0] if '.' in fqdn else ''
                     records.append({
                         'subname': subname,
                         'type': 'CNAME',
-                        'ttl': int(ttl),
+                        'ttl': ttl_val,
                         'records': [target]
                     })
         
@@ -659,12 +675,17 @@ class ImportExportManager:
                     if not zone_data:
                         logger.warning(f"Zone {zone_name} not found in cache, skipping")
                         continue
-                    
-                    # Get records from cache
+
+                    # Get records — try cache first, fall back to API
                     records, _ = self.cache_manager.get_cached_records(zone_name)
                     if records is None:
-                        logger.warning(f"Records for zone {zone_name} not found in cache, skipping")
-                        continue
+                        success, api_records = self.api_client.get_records(zone_name)
+                        if success and api_records:
+                            records = api_records
+                            self.cache_manager.cache_records(zone_name, records)
+                        else:
+                            logger.warning(f"Records for zone {zone_name} not available, skipping")
+                            continue
                     
                     # Generate filename for this zone
                     zone_filename = self.generate_export_filename(zone_name, format_type)

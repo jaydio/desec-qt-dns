@@ -2,16 +2,46 @@
 
 ## Overview
 
-The application uses a two-layer logging system:
+The application uses three complementary notification layers:
 
-1. **Python `logging` module** — writes structured records to `~/.config/desecqt/logs/` and the console (debug mode)
-2. **Log Console widget** — in-window panel at the bottom of the main window with colour-coded, timestamped entries
+1. **InfoBar toasts** — auto-dismissing colour-coded banners at the top-centre of the main window; cover all API operations and user-facing errors
+2. **Log Console widget** — sidebar page with persistent colour-coded, timestamped entries
+3. **Python `logging` module** — writes structured records to `~/.config/desecqt/logs/` and the console (debug mode)
+
+---
+
+## InfoBar Toasts
+
+InfoBar toasts appear at the top-centre of the main window regardless of which page is active. They auto-dismiss after a type-dependent duration and require no user interaction.
+
+| Variant | Colour | Duration | Typical trigger |
+|---------|--------|----------|-----------------|
+| `success` | Green | 4 s | Record saved, zone added, token created |
+| `info` | Blue | 3 s | Neutral status or advisory |
+| `warning` | Amber | 5 s | Offline guard, rate-limit advisory |
+| `error` | Red | 8 s | API error, validation failure, network error |
+
+### Implementation
+
+```python
+from qfluentwidgets import InfoBar, InfoBarPosition
+
+InfoBar.error(
+    title="Record Save Failed",
+    content=detail,
+    parent=self.window(),     # always self.window() for top-centre positioning
+    duration=8000,
+    position=InfoBarPosition.TOP,
+)
+```
+
+All InfoBar calls use `parent=self.window()` to anchor to the top-level `FluentWindow`, ensuring consistent positioning across all nested sub-widgets and sidebar pages.
 
 ---
 
 ## Log Console
 
-The log console is toggled via **View → Show Log Console**.
+The log console is accessible via the **Log Console** item in the sidebar (bottom section).
 
 ### Severity Colours
 
@@ -113,21 +143,21 @@ Format:
 2026-02-23 06:05:19,421 - cache_manager - DEBUG - Cached 5 zones (L1 + L2 + L3)
 ```
 
-Enable **debug mode** (**File → Settings → Enable debug mode**) to include `DEBUG`-level entries.
+Enable **debug mode** (Settings sidebar page → Debug Mode toggle) to include `DEBUG`-level entries.
 
 ---
 
 ## Implementation Details
 
-### Signal/Slot Chain
+### Log Signal/Slot Chain
 
 ```
-component.log_message.emit(message, level)
+component.log_signal.emit(message, level)
     → MainWindow.log_message_handler(message, level)
         → LogWidget.add_message(message, level)
 ```
 
-Workers (bulk delete, search & replace, import) emit `log_message` signals directly; the main window routes them to the log widget.
+Workers (bulk delete, search & replace, import) emit `log_signal` signals directly; the main window routes them to the log widget.
 
 ### LogWidget API
 

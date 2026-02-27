@@ -1,24 +1,24 @@
 # deSEC Qt DNS Manager
 
-![deSEC DNS Manager - Main Window](img/main_window.png)
+![deSEC DNS Manager - Main Window](img/01_dark_main_window.png)
 
-📸 **[View all screenshots →](img/README.md)**
-
-A Qt6 desktop application for managing DNS zones and records via the [deSEC](https://desec.io) DNS API.
+A PySide6 desktop application with Fluent Design for managing DNS zones and records via the [deSEC](https://desec.io) DNS API.
 
 ---
 
-## ✨ Features
+## Features
 
 ### DNS Management
-- **Zone management** — create and delete DNS zones; zone list shows `Total zones: N/limit` using your account's domain quota fetched live from the API
-- **Record management** — full CRUD for 37 DNS record types with format hints, examples, and inline validation
+- **Zone management** — create and delete DNS zones; zone list sorted alphabetically; header shows `Total zones: N/limit` using your account's domain quota fetched live from the API
+- **Record management** — full CRUD for 38+ DNS record types with format hints, examples, and inline validation via a slide-in edit panel
+- **DNSSEC overview** — dedicated sidebar page showing DS and DNSKEY records for any zone, with one-click copy and RFC-standard formatting
 - **Batch actions** — select multiple records with checkboxes, then bulk-delete with one click; Select All / Select None shortcuts
-- **Multiline records** — enter multiple values per RRset (one per line); toggle full display via View menu
+- **Multiline records** — enter multiple values per RRset (one per line); configurable display in Settings
+- **Version history** — Git-based zone versioning with snapshot, timeline browse, and one-click restore
 
 ### Search & Organisation
 - **Global Search & Replace** — search records across all zones by subname, type, content, TTL, or zone name (plain text or regex); bulk-replace content, rename subnames, update TTLs, delete records, or export results — with a full change log
-- **Record filtering** — real-time search within a zone across all fields
+- **Record filtering** — real-time search across name, type, and content; dedicated Type and TTL filter fields for precise narrowing; all filters AND'd together
 - **Sortable table** — click any column header to sort; third click returns to default
 
 ### Token Management
@@ -27,7 +27,8 @@ A Qt6 desktop application for managing DNS zones and records via the [deSEC](htt
 - **RRset policies** — fine-grained per-domain/subname/type write access rules
 - **Expiration controls** — max age and max unused period
 - **Subnet restrictions** — limit token use to specific CIDR ranges
-- Accessible via **File → Manage Tokens** (enabled only when the active token has `perm_manage_tokens`)
+
+> **Note:** The deSEC API grants every valid token full **read** access to all zones and records on the account. Token policies only restrict **write** operations (create, update, delete). There is no way to limit which zones a token can see.
 
 ### Import / Export
 - **Formats** — JSON (API-compatible), YAML (Infrastructure-as-Code), BIND zone files, djbdns/tinydns
@@ -35,21 +36,31 @@ A Qt6 desktop application for managing DNS zones and records via the [deSEC](htt
 - **Import modes** — Append, Merge, or Replace with preview before commit
 - **Progress tracking** — real-time progress bar and per-record status
 
+### API Queue & Reliability
+- **Central API queue** — all API calls processed sequentially via a background thread with priority levels (High / Normal / Low)
+- **Auto-retry** — transient 429 rate-limit responses retried automatically (up to 3 times)
+- **Adaptive throttling** — rate limit halved automatically after 429 responses; self-heals over time
+- **Queue monitor** — sidebar page showing pending requests, completed history, and full request/response detail
+- **Configurable rate limit** — 0–10 req/sec to avoid 429 errors during bulk operations
+
 ### Multi-Profile Support
 - Each profile has isolated API token, cache, and settings
-- Create, rename, switch, and delete profiles via **Profile → Manage Profiles…**
+- Create, rename, switch, and delete profiles via the Profile sidebar page
 - Application restarts on profile switch for complete isolation
 
 ### Themes & UI
-- Light, Dark, and System Default theme modes with independent light/dark theme selectors
-- Collapsible log console with colour-coded severity (green / orange / red / palette text)
-- Status bar showing last sync time and ONLINE / OFFLINE state
+- **Fluent Design** — PySide6-FluentWidgets with sidebar navigation
+- Light, Dark, and Auto (follow OS) theme modes
+- Slide-in panels for all forms (records, zones, tokens, profiles) — no popup dialogs
+- Two-step confirmation drawers for destructive actions
+- **InfoBar toasts** — auto-dismissing colour-coded notifications (success, warning, error, info) for all API operations
+- Log console sidebar page with colour-coded severity
 
 ### Performance & Reliability
-- Three-layer cache (memory → pickle → JSON) with O(1) indexed lookups
+- **Cache-first display** — cached data shown immediately, fresh data fetched in background
+- Three-layer cache (memory → JSON) with O(1) indexed lookups
 - All API I/O in background threads — UI never blocks
-- Configurable API rate limit (0–10 req/sec) to avoid 429 errors during bulk operations
-- Authentication failures (HTTP 401) surfaced immediately with a dialog prompt
+- Git-based zone versioning at `~/.config/desecqt/versions/`
 
 ---
 
@@ -65,7 +76,7 @@ deSEC auto-manages DNSSEC records server-side:
 
 ---
 
-## Supported Record Types (37)
+## Supported Record Types (38+)
 
 `A` `AAAA` `AFSDB` `APL` `CAA` `CDNSKEY` `CERT` `CNAME` `DHCID` `DNAME` `DNSKEY` `DLV` `DS` `EUI48` `EUI64` `HINFO` `HTTPS` `KX` `L32` `L64` `LOC` `LP` `MX` `NAPTR` `NID` `NS` `OPENPGPKEY` `PTR` `RP` `SMIMEA` `SPF` `SRV` `SSHFP` `SVCB` `TLSA` `TXT` `URI`
 
@@ -112,8 +123,8 @@ python src/main.py
 | Shortcut | Action |
 |----------|--------|
 | `F5` | Sync now |
-| `Delete` | Delete selected record (with confirmation) |
-| `Ctrl+F` | Focus zone / record search field |
+| `Delete` | Delete selected zone or record (with confirmation) |
+| `Ctrl+F` | Cycle zone / record search fields |
 | `Escape` | Clear search filter |
 | `Ctrl+Q` | Quit |
 
@@ -127,16 +138,17 @@ Settings are stored per-profile at:
 ~/.config/desecqt/profiles/<profile_name>/config.json
 ```
 
-Key settings (all editable via **File → Settings**):
+Key settings (all editable via the **Settings** sidebar page):
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | API URL | `https://desec.io/api/v1` | deSEC endpoint |
 | API Token | — | Fernet-encrypted |
-| Sync Interval | 10 min | Zone list refresh rate |
-| API Rate Limit | 2.0 req/sec | Throttle for bulk ops |
-| Theme Mode | System | Light / Dark / System Default |
+| Sync Interval | 15 min | Zone list refresh rate |
+| API Rate Limit | 1.0 req/sec | Throttle for bulk ops |
+| Theme Mode | Auto | Light / Dark / Auto |
 | Debug Mode | off | Verbose console logging |
+| Queue History | on | Persist API queue history |
 
 ---
 
@@ -145,10 +157,11 @@ Key settings (all editable via **File → Settings**):
 | Document | Description |
 |----------|-------------|
 | [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) | Module structure, data flow, design patterns |
-| [doc/UI-FEATURES.md](doc/UI-FEATURES.md) | Complete UI reference — all dialogs and controls |
+| [doc/UI-FEATURES.md](doc/UI-FEATURES.md) | Complete UI reference — sidebar pages, panels, drawers |
 | [doc/RECORD-MANAGEMENT.md](doc/RECORD-MANAGEMENT.md) | Record types, TTL, batch actions, troubleshooting |
-| [doc/CONFIG.md](doc/CONFIG.md) | All configuration keys and cache locations |
+| [doc/CONFIG.md](doc/CONFIG.md) | All configuration keys and data locations |
 | [doc/CACHING.md](doc/CACHING.md) | Three-layer cache implementation |
+| [doc/API-NOTES.md](doc/API-NOTES.md) | API queue, rate limiting, 429 handling |
 | [doc/PROFILES.md](doc/PROFILES.md) | Multi-profile setup and usage |
 | [doc/IMPORT_EXPORT.md](doc/IMPORT_EXPORT.md) | Import/Export formats, modes, and workflows |
 | [doc/LOGS-AND-NOTIFICATIONS.md](doc/LOGS-AND-NOTIFICATIONS.md) | Log console, severity levels, file logging |
@@ -160,4 +173,4 @@ Key settings (all editable via **File → Settings**):
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+GPL v3 — see [LICENSE](LICENSE) for details.

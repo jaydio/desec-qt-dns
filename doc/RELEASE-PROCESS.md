@@ -29,10 +29,9 @@ The following files must be updated with the new version number:
 #### 🎯 Critical Files (Must Update)
 
 **`src/main_window.py`**
-- **Location**: Line ~820 in the `show_about_dialog()` method
-- **What to change**: Update the version string in the HTML content
-- **Example**: `"<p align=\"center\"><b>Version 0.6.0-beta</b></p>"`
-- **Why**: This is displayed in the application's About dialog
+- **Location**: `AboutInterface` class, the `CaptionLabel` version string
+- **What to change**: Update the version string (e.g. `CaptionLabel("v2.0.0-beta")`)
+- **Why**: This is displayed in the About sidebar page
 
 #### 📚 Documentation Files (Should Update)
 

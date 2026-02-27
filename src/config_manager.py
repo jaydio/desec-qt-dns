@@ -7,8 +7,10 @@ Handles reading, writing, and verifying configuration settings.
 """
 
 import os
+import stat
 import json
 import logging
+import tempfile
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -21,6 +23,7 @@ class ConfigManager:
     
     CONFIG_DIR = os.path.expanduser("~/.config/desecqt")
     CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+    SALT_FILE = os.path.join(CONFIG_DIR, "salt")
     DEFAULT_API_URL = "https://desec.io/api/v1"
     
     def __init__(self):
@@ -28,33 +31,30 @@ class ConfigManager:
         self._config = {
             "api_url": self.DEFAULT_API_URL,
             "auth_token": "",
-            "sync_interval_minutes": 10,  # Default sync interval in minutes
+            "sync_interval_minutes": 15,  # Default sync interval in minutes
             "debug_mode": False,
             "show_log_console": True,  # Default to showing log console
             "keepalive_interval": 60,  # Default keepalive check interval in seconds
             "offline_mode": False,  # Default to online mode
             "show_multiline_records": True,  # Default to full display of multiline records
-            "api_rate_limit": 2.0,  # Default API requests per second (0 = no limit)
-            "theme_type": "light",  # Default theme type (light, dark, system)
-            "light_theme_id": "light_plus",  # Default light theme ID
-            "dark_theme_id": "dark_plus"  # Default dark theme ID
+            "api_rate_limit": 1.0,  # Default API requests per second (0 = no limit)
+            "theme_type": "auto",  # Default theme type: auto, light, dark
+            "queue_history_persist": True,  # Persist queue history across restarts
+            "queue_history_limit": 5000,  # Max queue history entries to retain
         }
         self._ensure_config_dir_exists()
         self._load_config()
         
     def _ensure_config_dir_exists(self):
-        """Create configuration directory if it doesn't exist."""
-        if not os.path.exists(self.CONFIG_DIR):
-            try:
-                os.makedirs(self.CONFIG_DIR)
-                logger.info(f"Created configuration directory: {self.CONFIG_DIR}")
-            except OSError as e:
-                logger.error(f"Failed to create config directory: {e}")
+        """Create configuration directory if it doesn't exist, with restrictive permissions."""
+        try:
+            os.makedirs(self.CONFIG_DIR, exist_ok=True)
+            os.chmod(self.CONFIG_DIR, stat.S_IRWXU)  # 0700
+        except OSError as e:
+            logger.error(f"Failed to create/secure config directory: {e}")
     
-    def _get_encryption_key(self):
-        """Generate a consistent encryption key based on user-specific data."""
-        # Using the username and machine ID as a salt for encryption
-        # This is a simple approach - for production use, consider a more secure key management strategy
+    def _get_legacy_encryption_key(self):
+        """Derive the old (pre-salt-file) encryption key for migration."""
         salt = (os.path.expanduser("~") + os.name).encode()
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
@@ -62,9 +62,35 @@ class ConfigManager:
             salt=salt,
             iterations=100000,
         )
-        # Generate key from a fixed passphrase plus the salt (which varies by user/machine)
-        key = base64.urlsafe_b64encode(kdf.derive(b"desecqt-fixed-passphrase"))
-        return key
+        return base64.urlsafe_b64encode(kdf.derive(b"desecqt-fixed-passphrase"))
+
+    def _get_salt(self):
+        """Read or create the random salt file (0600 permissions)."""
+        if os.path.exists(self.SALT_FILE):
+            with open(self.SALT_FILE, "rb") as f:
+                salt = f.read()
+            if len(salt) == 32:
+                return salt
+            logger.warning("Salt file has unexpected length, regenerating")
+        salt = os.urandom(32)
+        fd = os.open(self.SALT_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, salt)
+        finally:
+            os.close(fd)
+        logger.info("Generated new random salt")
+        return salt
+
+    def _get_encryption_key(self):
+        """Derive an encryption key using a per-installation random salt."""
+        salt = self._get_salt()
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=100000,
+        )
+        return base64.urlsafe_b64encode(kdf.derive(b"desecqt-fixed-passphrase"))
     
     def _encrypt_token(self, token):
         """Encrypt the API token before storing it."""
@@ -89,17 +115,39 @@ class ConfigManager:
             return ""
     
     def _load_config(self):
-        """Load configuration from file."""
+        """Load configuration from file, migrating encryption salt if needed."""
         if os.path.exists(self.CONFIG_FILE):
             try:
                 with open(self.CONFIG_FILE, 'r') as f:
                     stored_config = json.load(f)
-                    
+
                 # Decrypt the auth token if it exists
                 if 'encrypted_auth_token' in stored_config:
-                    stored_config['auth_token'] = self._decrypt_token(stored_config['encrypted_auth_token'])
+                    enc_token = stored_config['encrypted_auth_token']
+                    token = self._decrypt_token(enc_token)
+
+                    # Migration: if new-key decryption failed but legacy key works,
+                    # re-encrypt with the new random salt.
+                    if not token and enc_token:
+                        try:
+                            legacy_key = self._get_legacy_encryption_key()
+                            f_legacy = Fernet(legacy_key)
+                            token = f_legacy.decrypt(enc_token.encode()).decode()
+                            if token:
+                                logger.info("Migrated token encryption to random salt")
+                        except Exception:
+                            token = ""
+
+                    stored_config['auth_token'] = token
                     del stored_config['encrypted_auth_token']
-                    
+
+                    # Persist immediately so the token is re-encrypted with the new salt
+                    if token:
+                        self._config.update(stored_config)
+                        self.save_config()
+                        logger.info("Configuration loaded and token re-encrypted successfully")
+                        return
+
                 # Only update with explicitly set values
                 self._config.update(stored_config)
                 logger.info("Configuration loaded successfully")
@@ -109,18 +157,29 @@ class ConfigManager:
             logger.info("No configuration file found, using defaults")
     
     def save_config(self):
-        """Save current configuration to file."""
+        """Save current configuration to file with atomic write and restrictive permissions."""
         try:
-            # Create a copy of the config to avoid modifying the original
             config_to_save = self._config.copy()
-            
+
             # Encrypt the auth token for storage
             if 'auth_token' in config_to_save and config_to_save['auth_token']:
                 config_to_save['encrypted_auth_token'] = self._encrypt_token(config_to_save['auth_token'])
-                del config_to_save['auth_token']  # Don't store the plain token
-            
-            with open(self.CONFIG_FILE, 'w') as f:
-                json.dump(config_to_save, f, indent=2)
+                del config_to_save['auth_token']
+
+            # Atomic write: write to temp file then rename into place
+            fd, tmp_path = tempfile.mkstemp(dir=self.CONFIG_DIR, suffix=".tmp")
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(config_to_save, f, indent=2)
+                os.replace(tmp_path, self.CONFIG_FILE)
+            except BaseException:
+                # Clean up temp file on failure
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+            os.chmod(self.CONFIG_FILE, stat.S_IRUSR | stat.S_IWUSR)  # 0600
             logger.info("Configuration saved successfully")
             return True
         except IOError as e:
@@ -219,7 +278,7 @@ class ConfigManager:
         Returns:
             float: The maximum requests per second (0 = no limit)
         """
-        return self._config.get("api_rate_limit", 2.0)  # Default to 2 requests per second
+        return self._config.get("api_rate_limit", 1.0)  # Default to 1 request per second
     
     def set_api_rate_limit(self, rate_limit):
         """Set the API request rate limit.
@@ -259,79 +318,37 @@ class ConfigManager:
         self._config["api_throttle_seconds"] = seconds
         
     def get_theme_type(self):
-        """Get the theme type (light, dark, or system).
-        
+        """Get the theme type.
+
         Returns:
-            str: The current theme type
+            str: 'auto', 'light', or 'dark'
         """
-        return self._config.get("theme_type", "light")  # Default to light theme
-    
+        raw = self._config.get("theme_type", "auto")
+        # Migrate legacy 'system' value from old config files
+        if raw == "system":
+            return "auto"
+        return raw
+
     def set_theme_type(self, theme_type):
         """Set the theme type.
-        
+
         Args:
-            theme_type (str): Theme type ('light', 'dark', or 'system')
+            theme_type (str): 'auto', 'light', or 'dark'
         """
         self._config["theme_type"] = theme_type
-    
-    def get_theme_id(self):
-        """Get the currently active theme ID based on theme type.
-    
-        Returns:
-            str: The current theme ID
-        """
-        theme_type = self.get_theme_type()
-        if theme_type == "light":
-            return self.get_light_theme_id()
-        elif theme_type == "dark":
-            return self.get_dark_theme_id()
-        else:  # system theme
-            # For system theme, we'll return the appropriate theme based on system detection
-            # This will be handled by ThemeManager when applied
-            return self._config.get("theme_id", "light_plus")
-    
-    def set_theme_id(self, theme_id):
-        """Set the theme ID for the current theme type.
-        
-        Args:
-            theme_id: The theme identifier
-        """
-        theme_type = self.get_theme_type()
-        if theme_type == "light":
-            self.set_light_theme_id(theme_id)
-        elif theme_type == "dark":
-            self.set_dark_theme_id(theme_id)
-        # Also store in legacy theme_id for backward compatibility
-        self._config["theme_id"] = theme_id
-        
-    def get_light_theme_id(self):
-        """Get the light theme ID.
-        
-        Returns:
-            str: The light theme ID
-        """
-        return self._config.get("light_theme_id", "light_plus")
-    
-    def set_light_theme_id(self, theme_id):
-        """Set the light theme ID.
-        
-        Args:
-            theme_id: The light theme identifier
-        """
-        self._config["light_theme_id"] = theme_id
-    
-    def get_dark_theme_id(self):
-        """Get the dark theme ID.
-        
-        Returns:
-            str: The dark theme ID
-        """
-        return self._config.get("dark_theme_id", "dark_plus")
-    
-    def set_dark_theme_id(self, theme_id):
-        """Set the dark theme ID.
-        
-        Args:
-            theme_id: The dark theme identifier
-        """
-        self._config["dark_theme_id"] = theme_id
+
+    def get_queue_history_persist(self):
+        """Get whether queue history should persist across restarts."""
+        return self._config.get("queue_history_persist", True)
+
+    def set_queue_history_persist(self, enabled):
+        """Set whether queue history should persist across restarts."""
+        self._config["queue_history_persist"] = enabled
+
+    def get_queue_history_limit(self):
+        """Get the maximum number of queue history entries to retain."""
+        return self._config.get("queue_history_limit", 5000)
+
+    def set_queue_history_limit(self, limit):
+        """Set the maximum number of queue history entries to retain."""
+        self._config["queue_history_limit"] = int(limit)

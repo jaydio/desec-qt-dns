@@ -89,6 +89,7 @@ build/
 *.bak
 *.tmp
 *.old
+temp/
 
 # === Ignore personal overrides, if any ===
 *.user

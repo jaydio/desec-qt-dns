@@ -9,7 +9,7 @@ import logging
 import time
 from typing import List, Dict, Any, Optional
 
-from PyQt6.QtCore import QRunnable, QObject, pyqtSignal
+from PySide6.QtCore import QRunnable, QObject, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class LoadRecordsWorker(QRunnable):
     
     class Signals(QObject):
         """Signal wrapper for thread-safe communication with the main thread."""
-        finished = pyqtSignal(bool, object, str, str)
+        finished = Signal(bool, object, str, str)
     
     def __init__(self, api_client, zone_name: str, cache_manager):
         """Initialize the worker.
@@ -75,7 +75,7 @@ class LoadZonesWorker(QRunnable):
     
     class Signals(QObject):
         """Signal wrapper for thread-safe communication."""
-        finished = pyqtSignal(bool, object, str)
+        finished = Signal(bool, object, str)
     
     def __init__(self, api_client, cache_manager):
         """Initialize the worker.

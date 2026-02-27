@@ -9,8 +9,7 @@ Sets up the application, initializes components, and launches the UI.
 import sys
 import os
 import logging
-import time
-from PyQt6 import QtGui, QtCore, QtWidgets
+from PySide6 import QtGui, QtCore, QtWidgets
 
 # Import local modules
 from profile_manager import ProfileManager
@@ -43,20 +42,20 @@ def main():
         app.setApplicationName("deSEC Qt DNS Manager")
         app.setOrganizationName("deSECQT")
         app.setWindowIcon(QtGui.QIcon("icon.png"))  # Add an icon if available
-        
+
         # Force application to process events before theme detection
         app.processEvents()
-        
+
         # Set up profile management
         profile_manager = ProfileManager()
         config_manager = profile_manager.get_config_manager()
         cache_manager = profile_manager.get_cache_manager()
         api_client = APIClient(config_manager)
-        
+
         # Create and show main window
         main_window = MainWindow(config_manager, api_client, cache_manager, profile_manager)
         main_window.show()
-        
+
         # Launch the application
         logger.info("Application started")
         sys.exit(app.exec())
@@ -67,7 +66,7 @@ def main():
         try:
             QtWidgets.QMessageBox.critical(None, "Fatal Error", 
                 f"The application encountered a fatal error and needs to close.\n\nDetails: {str(e)}")
-        except:
+        except Exception:
             pass
         sys.exit(1)
 

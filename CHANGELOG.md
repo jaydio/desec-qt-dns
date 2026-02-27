@@ -5,6 +5,99 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-beta] - 2026-02-26
+
+### Added in 2.0.0-beta
+
+- **Fluent Design UI overhaul** — complete migration from PyQt6 to PySide6 + PySide6-FluentWidgets with Fluent Design System
+  - FluentWindow shell with sidebar navigation replaces the traditional menu bar
+  - Sidebar items: DNS, Search & Replace, Import, Export, Tokens, Queue, History, Profile, Settings (top); About, Log Console, Sync, Connection Status, Last Sync (bottom)
+  - Configurable sidebar width (180 px expanded)
+
+- **Slide-in panels** — all form dialogs replaced with animated right-side overlay panels (220 ms, QPropertyAnimation)
+  - RecordEditPanel (440 px) for adding and editing DNS records
+  - AddZonePanel (340 px) for creating zones
+  - CreateTokenPanel (460 px) for creating API tokens
+  - TokenPolicyPanel (400 px) for adding/editing RRset policies
+  - ProfileFormPanel (400 px) for creating and renaming profiles
+  - QueueDetailPanel (480 px) for inspecting request/response data
+  - AuthPanel (440 px) for API token entry
+
+- **Confirmation drawers** — two-step top-sliding drawers replace all QMessageBox popups
+  - DeleteConfirmDrawer (red) for destructive actions: delete zone, delete record, delete profile, clear cache
+  - RestoreConfirmDrawer (amber) for restore/overwrite actions: restore zone version
+  - ConfirmDrawer (blue) for general confirmations: quit, switch profile, apply replace, import records
+  - NotifyDrawer for error, warning, info, and success notifications
+  - Two-step confirmation with button-swap prevents accidental destructive clicks
+
+- **Central API queue** (`api_queue.py`) — all API calls processed through a background QThread
+  - QueueItem dataclass with priority (HIGH=0, NORMAL=1, LOW=2), category, action, callable, callback
+  - Sequential processing with FIFO ordering within priority tier
+  - Auto-retry on transient HTTP 429 responses (retry_after <= 60s, up to 3 retries)
+  - Cooldown mode for extended rate limits (retry_after > 60s): pauses queue, stops timers, auto-resumes
+  - Adaptive rate limiting: `adapt_rate_limit()` halves rate on 429 (floor 0.25 req/s)
+  - Callback dispatch to main thread via Qt Signal for thread-safe UI updates
+  - Pause/resume support (used by offline mode and rate-limit cooldown)
+
+- **Queue monitor** (`queue_interface.py`) — sidebar page for observing and managing the API queue
+  - Pending queue table with priority icon, action, and status
+  - History table with filtering by category, search, and status (completed/failed/cancelled)
+  - QueueDetailPanel slide-in showing full request/response JSON for any history item
+  - Pause/Resume, Cancel Selected, Retry Failed, Clear History actions
+
+- **Git-based zone version history** (`version_manager.py`) — automatic versioning at `~/.config/desecqt/versions/`
+  - Snapshot committed on every record mutation (create, update, delete)
+  - `get_history()` returns commit timeline per zone (hash, date, message)
+  - `restore()` retrieves records from any historical version
+
+- **Version history browser** (`history_interface.py`) — sidebar page for browsing and restoring zone versions
+  - Zone list showing all versioned zones
+  - Commit timeline with date, message, and truncated hash
+  - Record preview in BIND-style format for any selected version
+  - Restore button with RestoreConfirmDrawer confirmation; uses bulk PUT via API queue
+  - Delete version history per zone
+
+- **Settings sidebar page** (`settings_interface.py`) — replaces the modal configuration dialog
+  - Two-column layout with Fluent SettingCard groups
+  - Left: Connection (API URL, token button), Synchronization (sync interval, rate limit)
+  - Right: Appearance (theme), Queue (persist history, retention limit), Advanced (debug mode, token manager)
+
+- **Shared Fluent styles** (`fluent_styles.py`) — extracted theme-aware QSS constants
+  - `container_qss()` for QTabWidget, QGroupBox, QLabel with dark/light detection
+  - `combo_qss()` for native QComboBox styling
+  - `SCROLL_AREA_QSS` and `SPLITTER_QSS` constants
+
+- **New documentation** — `doc/API-NOTES.md` covering the API queue, rate limiting, 429 handling, and all deSEC endpoints used
+
+### Changed in 2.0.0-beta
+
+- **Tech stack** — migrated from PyQt6 to PySide6 + PySide6-FluentWidgets
+- **Navigation** — sidebar replaces the traditional menu bar; all pages accessible as sidebar items
+- **Record editing** — slide-in RecordEditPanel replaces the Record QDialog popup
+- **Profile management** — ProfileFormPanel slide-in replaces CreateProfileDialog and RenameProfileDialog popups; ConfirmDrawer replaces QMessageBox for switch confirmation
+- **Import confirmation** — ConfirmDrawer replaces QMessageBox.question
+- **Search & Replace confirmation** — ConfirmDrawer replaces QMessageBox.question
+- **Cache clear confirmation** — DeleteConfirmDrawer replaces QMessageBox.question
+- **Quit confirmation** — ConfirmDrawer replaces QMessageBox.question
+- **Keyboard shortcuts info** — NotifyDrawer replaces QMessageBox.information
+- **Default sync interval** — changed from 10 to 15 minutes
+- **Default rate limit** — changed from 2.0 to 1.0 req/sec
+- **Cache layers** — simplified to memory + JSON (pickle layer removed)
+- **Theme system** — simplified to dark/light/auto via qfluentwidgets `setTheme()` (no per-theme ID selectors)
+
+### Technical Improvements in 2.0.0-beta
+
+- 25 source modules (up from 18), all under `src/`
+- `config_dialog.py` deleted — superseded by `settings_interface.py`
+- `auth_dialog.py` deprecated — replaced by `AuthPanel` in `main_window.py`
+- All `pyqtSignal` → `Signal`, all `PyQt6` imports → `PySide6`
+- `QDialogButtonBox` removed everywhere; replaced with explicit PushButton/PrimaryPushButton pairs
+- Hardcoded hex colours removed from all stylesheets; replaced with palette references and `isDarkTheme()` checks
+- Shared QSS extracted to `fluent_styles.py` (was copy-pasted in 4+ files)
+- `RecordDialog` QDialog → `RecordEditPanel` slide-in overlay with `QPropertyAnimation`
+- Thread-safe callback dispatch in APIQueue via `_callback_dispatch` Signal
+- Atomic file writes (tempfile + os.replace) in config, cache, and queue history persistence
+
 ## [0.12.1-beta] - 2026-02-23
 
 ### Fixed in 0.12.1-beta
