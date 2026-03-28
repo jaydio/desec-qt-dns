@@ -53,14 +53,14 @@ A PySide6 desktop application with Fluent Design for managing DNS zones and reco
 ### Themes & UI
 - **Fluent Design** — PySide6-FluentWidgets with sidebar navigation
 - Light, Dark, and Auto (follow OS) theme modes
-- Slide-in panels for all forms (records, zones, tokens, profiles) — no popup dialogs
+- Slide-in panels for all forms (records, zones, tokens, profiles) — modal dialogs only where security requires it (e.g. token secret display)
 - Two-step confirmation drawers for destructive actions
 - **InfoBar toasts** — auto-dismissing colour-coded notifications (success, warning, error, info) for all API operations
 - Log console sidebar page with colour-coded severity
 
 ### Performance & Reliability
 - **Cache-first display** — cached data shown immediately, fresh data fetched in background
-- Three-layer cache (memory → JSON) with O(1) indexed lookups
+- Two-layer cache (memory → JSON) with O(1) indexed lookups
 - All API I/O in background threads — UI never blocks
 - Git-based zone versioning at `~/.config/desecqt/versions/`
 
