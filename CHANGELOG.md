@@ -5,6 +5,17 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0-beta] - 2026-03-28
+
+### Added in 1.1.0-beta
+
+- **Copy Domain button** — new button next to "Add Record" in the records toolbar copies the selected zone name to the clipboard with an InfoBar toast confirmation
+
+### Fixed in 1.1.0-beta
+
+- **TokenSecretDialog theme** — the token creation popup now respects the active dark/light theme instead of always rendering with a white background; added `QDialog` background rule to `container_qss()` in `fluent_styles.py`
+- **Token policy edit shows wrong domain** — after table sorting, editing or double-clicking a policy row returned the wrong policy data; fixed by storing the original list index in each table item via `Qt.ItemDataRole.UserRole` and reading it back in `_get_selected_policy()`, `_on_policy_double_clicked()`, and `_delete_policy()`
+
 ## [1.0.0-beta] - 2026-02-27
 
 ### Added in 1.0.0-beta

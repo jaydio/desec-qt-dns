@@ -993,7 +993,14 @@ class RecordWidget(QtWidgets.QWidget):
         if not self.is_online:
             self.add_record_btn.setToolTip("Unavailable in offline mode")
         actions_layout.addWidget(self.add_record_btn)
-        
+
+        # Copy domain name button
+        self.copy_domain_btn = PushButton("Copy Domain")
+        self.copy_domain_btn.setToolTip("Copy selected domain name to clipboard")
+        self.copy_domain_btn.setEnabled(False)
+        self.copy_domain_btn.clicked.connect(self._copy_domain_name)
+        actions_layout.addWidget(self.copy_domain_btn)
+
         actions_layout.addStretch()
 
         self.select_all_btn = PushButton("Select All")
@@ -1032,6 +1039,8 @@ class RecordWidget(QtWidgets.QWidget):
             domain_name (str): Domain name to load records for
         """
         self.current_domain = domain_name
+        if hasattr(self, 'copy_domain_btn'):
+            self.copy_domain_btn.setEnabled(bool(domain_name))
         self.refresh_records()
     
     def set_online_status(self, is_online):
@@ -1459,6 +1468,12 @@ class RecordWidget(QtWidgets.QWidget):
         has_rows = self.records_table.rowCount() > 0
         self.select_all_btn.setEnabled(has_rows and self.can_edit)
         self.select_none_btn.setEnabled(has_rows and self.can_edit)
+
+    def _copy_domain_name(self):
+        if self.current_domain:
+            QtWidgets.QApplication.clipboard().setText(self.current_domain)
+            InfoBar.success("Copied", f"{self.current_domain}", duration=3000,
+                            position=InfoBarPosition.TOP, parent=self.window())
 
     def _select_all_records(self):
         self.records_table.selectAll()

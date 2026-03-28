@@ -85,6 +85,9 @@ dist/
 build/
 *.spec
 
+# === Project-local tracking ===
+BUGFIXES.md
+
 # === Local Artifacts ===
 *.bak
 *.tmp

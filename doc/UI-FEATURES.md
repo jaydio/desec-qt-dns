@@ -61,6 +61,7 @@ RecordWidget with a TableWidget. Columns: checkbox, Name, Type (colored by recor
 - All three filters are AND'd: a record must match every active filter to appear
 - Double-click a row to open the edit panel
 - Delete key on a selected row triggers deletion with DeleteConfirmDrawer
+- **Copy Domain** button next to Add Record copies the selected zone name to clipboard
 
 ### RecordEditPanel
 

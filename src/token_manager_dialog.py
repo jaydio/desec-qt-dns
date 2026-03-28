@@ -1374,13 +1374,14 @@ class TokenManagerInterface(QtWidgets.QWidget):
         self._policy_table.setSortingEnabled(False)
         self._policy_table.setRowCount(0)
 
-        for policy in self._policies:
+        for i, policy in enumerate(self._policies):
             row = self._policy_table.rowCount()
             self._policy_table.insertRow(row)
 
             domain_item = QtWidgets.QTableWidgetItem(
                 policy.get('domain') or '(default)'
             )
+            domain_item.setData(Qt.ItemDataRole.UserRole, i)
             if not policy.get('domain'):
                 _italicize(domain_item)
             self._policy_table.setItem(row, 0, domain_item)
@@ -1420,14 +1421,26 @@ class TokenManagerInterface(QtWidgets.QWidget):
 
     def _get_selected_policy(self):
         row = self._policy_table.currentRow()
-        if row < 0 or row >= len(self._policies):
+        if row < 0:
             return None
-        return self._policies[row]
+        item = self._policy_table.item(row, 0)
+        if item is None:
+            return None
+        idx = item.data(Qt.ItemDataRole.UserRole)
+        if idx is None or idx >= len(self._policies):
+            return None
+        return self._policies[idx]
 
     def _on_policy_double_clicked(self, row, column):
-        if not self._current_token_id or row < 0 or row >= len(self._policies):
+        if not self._current_token_id or row < 0:
             return
-        self._policy_panel.open_for_edit(self._current_token_id, self._policies[row])
+        item = self._policy_table.item(row, 0)
+        if item is None:
+            return
+        idx = item.data(Qt.ItemDataRole.UserRole)
+        if idx is None or idx >= len(self._policies):
+            return
+        self._policy_panel.open_for_edit(self._current_token_id, self._policies[idx])
 
     # ------------------------------------------------------------------
     # Policy CRUD
@@ -1452,9 +1465,14 @@ class TokenManagerInterface(QtWidgets.QWidget):
         if not selected_rows:
             return
 
-        policies_to_delete = [
-            self._policies[row] for row in selected_rows if row < len(self._policies)
-        ]
+        policies_to_delete = []
+        for row in selected_rows:
+            item = self._policy_table.item(row, 0)
+            if item is None:
+                continue
+            orig_idx = item.data(Qt.ItemDataRole.UserRole)
+            if orig_idx is not None and orig_idx < len(self._policies):
+                policies_to_delete.append(self._policies[orig_idx])
         if not policies_to_delete:
             return
 

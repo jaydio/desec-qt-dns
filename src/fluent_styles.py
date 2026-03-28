@@ -64,9 +64,11 @@ def container_qss() -> str:
     """QSS for QTabWidget / QGroupBox / QLabel / form widgets — theme-aware."""
     dark = isDarkTheme()
     tc = _DARK_TEXT if dark else _LIGHT_TEXT
+    dialog_bg = "rgba(43,43,43,1)" if dark else "rgba(255,255,255,1)"
     tab_bg = "rgba(50,50,50,0.9)" if dark else "rgba(240,240,240,0.9)"
     tab_sel = "rgba(60,60,60,1)" if dark else "rgba(255,255,255,1)"
     return (
+        f"QDialog {{ background: {dialog_bg}; color: {tc}; }}"
         f"QTabWidget::pane {{"
         f"  background: transparent;"
         f"  border: 1px solid rgba(128,128,128,0.3);"
