@@ -416,10 +416,11 @@ class WizardInterface(QtWidgets.QWidget):
             self._preview_table.setItem(r, 1, QtWidgets.QTableWidgetItem(row["subname"] or "@"))
             self._preview_table.setItem(r, 2, QtWidgets.QTableWidgetItem(row["type"]))
             self._preview_table.setItem(r, 3, QtWidgets.QTableWidgetItem(str(row["ttl"])))
-            self._preview_table.setItem(r, 4, QtWidgets.QTableWidgetItem(row["content"]))
+            content_display = "\n".join(row["contents"])
+            self._preview_table.setItem(r, 4, QtWidgets.QTableWidgetItem(content_display))
 
-            if row["error"]:
-                status_text = f"Error: {row['error']}"
+            if row["errors"]:
+                status_text = f"Error: {row['errors'][0]}"
                 n_error += 1
             elif row["status"] == "new":
                 status_text = "New"
@@ -458,6 +459,7 @@ class WizardInterface(QtWidgets.QWidget):
             parts.append(f"({', '.join(detail)})")
         self._preview_summary.setText(" ".join(parts))
 
+        # Disable Execute if nothing actionable or there are validation errors
         self._btn_next.setEnabled(actionable > 0 and n_error == 0)
 
     # ------------------------------------------------------------------
@@ -497,12 +499,15 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _resolve_records(self):
         """
-        Resolve template/custom records × variables × domains into a flat
-        list of concrete record operations.
+        Resolve template/custom records × variables × domains into a list
+        of RRset-level operations.
+
+        Records sharing the same (domain, subname, type) are grouped into a
+        single operation with a ``contents`` list, because the deSEC API
+        treats an RRset as one atomic unit.
 
         Returns list of dicts:
-            {domain, subname, type, ttl, content, status, existing_records, error}
-        where status is "new", "conflict", or "skipped".
+            {domain, subname, type, ttl, contents, status, existing_records, errors}
         """
         variables = self._collect_variables()
         prefix = variables.pop("subdomain_prefix", "").strip()
@@ -523,6 +528,8 @@ class WizardInterface(QtWidgets.QWidget):
 
             domain_vars = {**variables, "domain": domain}
 
+            # First pass: resolve variables and group by (subname, type)
+            groups = {}  # (subname, type) → {ttl, contents, errors}
             for rec in records:
                 content = rec["content"]
                 subname = rec["subname"]
@@ -537,8 +544,20 @@ class WizardInterface(QtWidgets.QWidget):
                         subname = prefix
 
                 is_valid, err_msg = _validate_record_content(rec["type"], content)
+                key = (subname, rec["type"])
+                if key not in groups:
+                    groups[key] = {
+                        "ttl": rec["ttl"],
+                        "contents": [],
+                        "errors": [],
+                    }
+                groups[key]["contents"].append(content)
+                if not is_valid:
+                    groups[key]["errors"].append(err_msg)
 
-                existing = existing_index.get((subname, rec["type"]))
+            # Second pass: determine conflict status per group
+            for (subname, rtype), grp in groups.items():
+                existing = existing_index.get((subname, rtype))
                 if existing is not None:
                     if self._conflict_strategy == "skip":
                         status = "skipped"
@@ -550,12 +569,12 @@ class WizardInterface(QtWidgets.QWidget):
                 result.append({
                     "domain": domain,
                     "subname": subname,
-                    "type": rec["type"],
-                    "ttl": rec["ttl"],
-                    "content": content,
+                    "type": rtype,
+                    "ttl": grp["ttl"],
+                    "contents": grp["contents"],
                     "status": status,
                     "existing_records": existing or [],
-                    "error": err_msg if not is_valid else "",
+                    "errors": grp["errors"],
                 })
 
         return result
@@ -771,7 +790,7 @@ class WizardInterface(QtWidgets.QWidget):
 
         actionable = [
             row for row in self._preview_rows
-            if row["status"] in ("new", "conflict") and not row["error"]
+            if row["status"] in ("new", "conflict") and not row["errors"]
         ]
 
         self._exec_table.setRowCount(len(actionable))
@@ -788,7 +807,8 @@ class WizardInterface(QtWidgets.QWidget):
             self._exec_table.setItem(i, 0, QtWidgets.QTableWidgetItem(row["domain"]))
             self._exec_table.setItem(i, 1, QtWidgets.QTableWidgetItem(row["subname"] or "@"))
             self._exec_table.setItem(i, 2, QtWidgets.QTableWidgetItem(row["type"]))
-            self._exec_table.setItem(i, 3, QtWidgets.QTableWidgetItem(row["content"]))
+            self._exec_table.setItem(i, 3, QtWidgets.QTableWidgetItem(
+                ", ".join(row["contents"])))
             self._exec_table.setItem(i, 4, QtWidgets.QTableWidgetItem("Pending..."))
 
             self._enqueue_record(i, row)
@@ -798,27 +818,28 @@ class WizardInterface(QtWidgets.QWidget):
         )
 
     def _enqueue_record(self, row_idx, row):
-        """Enqueue a single record operation."""
+        """Enqueue a single RRset operation (may contain multiple record values)."""
         domain = row["domain"]
         subname = row["subname"]
         rtype = row["type"]
         ttl = row["ttl"]
-        content = row["content"]
+        contents = row["contents"]
 
         if row["status"] == "conflict" and self._conflict_strategy == "merge":
             existing = list(row.get("existing_records", []))
-            if content not in existing:
-                existing.append(content)
+            for c in contents:
+                if c not in existing:
+                    existing.append(c)
             api_method = self._api.update_record
             records = existing
             action_desc = f"Merge {rtype} for {subname or '@'} in {domain}"
         elif row["status"] == "conflict" and self._conflict_strategy == "replace":
             api_method = self._api.update_record
-            records = [content]
+            records = contents
             action_desc = f"Replace {rtype} for {subname or '@'} in {domain}"
         else:
             api_method = self._api.create_record
-            records = [content]
+            records = contents
             action_desc = f"Create {rtype} for {subname or '@'} in {domain}"
 
         def _on_done(success, response, idx=row_idx, d=domain):
