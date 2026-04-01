@@ -98,23 +98,30 @@ This document outlines planned features and improvements for future releases of 
   - [x] One-click restore via bulk API PUT
   - [x] Delete version history per zone
 
-- [x] **Record Creation Wizard** (in v2.1.0-beta)
+- [x] **Record Creation Wizard** (in v1.2.0-beta)
   Step-by-step wizard for creating DNS records across multiple domains.
   - [x] Preset templates: Google Workspace, Microsoft 365, Fastmail, Proton Mail, Basic MX+SPF+DMARC
   - [x] Chat/Social: Matrix (Synapse), XMPP/Jabber
   - [x] Web: Let's Encrypt CAA, Web Hosting CNAME
   - [x] Security: DMARC, SPF, MTA-STS, DANE/TLSA
   - [x] ACME/Certificates: DNS-01 TXT, DNS-01 CNAME delegation, CAA with account binding
-  - [x] Verification: Google Site, Facebook Domain
+  - [x] Verification: Google Site, Facebook Domain, Microsoft, Apple, Brave
   - [x] Custom record builder with {variable} substitution
   - [x] Multi-template selection (combine multiple presets in one run)
-  - [x] Multi-domain checkbox selection with search filter
+  - [x] Multi-domain selection with search filter (Ctrl+click / Shift+click)
   - [x] Conflict strategy: Merge / Replace / Skip
   - [x] Preview with conflict detection before execution
   - [x] APIQueue integration with progress tracking and retry
+  - [x] Extended email templates: Tutanota/Tuta, Infomaniak, Mailfence, Zoho Mail, Brevo (shared + dedicated IP)
+  - [x] Extended web hosting: Netlify, Vercel, GitHub Pages, Cloudflare Pages, Web Server (A+AAAA+www)
+  - [x] Self-hosted email: Mail-in-a-Box, Mailcow, Cloudron
+  - [x] Transactional email: Mailgun, SendGrid, Mailchimp/Mandrill, Amazon SES, Postmark
+  - [x] Web platforms: Shopify, Squarespace, WordPress.com, Wix
+  - [x] CDN/Cloud: Cloudflare Tunnel, Azure Custom Domain
+  - [x] Collaboration: Notion, Atlassian
+  - [x] DNS Providers: deSEC, Cloudflare, AWS Route 53, Google Cloud, Hetzner, Linode, DigitalOcean, Namecheap, Dynadot, Vultr, Azure, OVH, Gandi
+  - [x] 70 total templates across 18 categories
   - [ ] Slide-in template search panel (like RecordEditPanel)
-  - [ ] Extended email templates: Tutanota/Tuta, Infomaniak, Mailfence, Zoho Mail
-  - [ ] Extended web hosting: Netlify, Vercel, GitHub Pages, Cloudflare Pages
   - [ ] Service provider bundles: Google (Workspace + Verification), Microsoft (365 + Teams + Intune), Proton (Mail + VPN)
   - [ ] Subdomain delegation mode (create subdomain + NS records)
 
