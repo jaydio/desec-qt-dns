@@ -371,8 +371,8 @@ TEMPLATES = [
             "dmarc_rua": {
                 "label": "Aggregate Report Email",
                 "hint": "Email address to receive DMARC aggregate reports",
-                "default": "",
-                "required": False,
+                "default": "dmarc@{domain}",
+                "required": True,
             },
         },
         "records": [

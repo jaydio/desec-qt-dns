@@ -177,8 +177,8 @@ class WizardInterface(QtWidgets.QWidget):
             f"Step {idx + 1} of {total} \u2014 {_STEP_TITLES[idx]}"
         )
 
-        # Back button: hidden on first step
-        self._btn_back.setVisible(idx > _STEP_MODE)
+        # Back button: hidden on first step and during execution
+        self._btn_back.setVisible(idx > _STEP_MODE and idx < _STEP_EXECUTE)
 
         # Start Over: only visible on the last (execution) step
         self._btn_reset.setVisible(idx == _STEP_EXECUTE)
@@ -362,6 +362,7 @@ class WizardInterface(QtWidgets.QWidget):
             if w := item.widget():
                 w.deleteLater()
         self._domain_checkboxes.clear()
+        self._selected_domains = []
 
         cached, _ = self._cache.get_cached_zones()
         zones = sorted(z.get("name", "") for z in (cached or []))
@@ -847,7 +848,12 @@ class WizardInterface(QtWidgets.QWidget):
                 result_item.setForeground(QtGui.QColor("#43A047"))
             if self._version_manager:
                 try:
-                    self._version_manager.snapshot(domain)
+                    cached_recs, _ = self._cache.get_cached_records(domain)
+                    if cached_recs:
+                        self._version_manager.snapshot(
+                            domain, cached_recs,
+                            f"Wizard: batch record creation",
+                        )
                 except Exception:
                     pass
         else:
