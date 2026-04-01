@@ -788,6 +788,7 @@ class WizardInterface(QtWidgets.QWidget):
 
         content_edit = LineEdit()
         content_edit.setPlaceholderText("Record content...")
+        content_edit.textChanged.connect(lambda: self._validate_current_step())
         self._custom_table.setCellWidget(row, 3, content_edit)
 
         self._custom_row_count.setText(
