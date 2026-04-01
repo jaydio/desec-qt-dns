@@ -280,12 +280,75 @@ class WizardInterface(QtWidgets.QWidget):
     # Step builder placeholders
     # ------------------------------------------------------------------
 
-    def _build_step_mode(self) -> QtWidgets.QWidget:
+    def _build_step_mode(self):
         w = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addWidget(CaptionLabel("Step placeholder: Choose Mode"))
-        layout.addStretch()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(16)
+
+        lay.addWidget(StrongBodyLabel("What would you like to do?"))
+        lay.addWidget(CaptionLabel(
+            "Choose a preset for common services, or create a custom record set."
+        ))
+
+        self._card_preset = self._make_mode_card(
+            "Use a Preset",
+            "Choose from curated templates for Google Workspace, Microsoft 365, "
+            "Matrix, ACME DNS-01, and more. Each template includes all required "
+            "DNS records with guided variable input.",
+        )
+        self._card_preset.mousePressEvent = lambda e: self._select_mode("preset")
+        lay.addWidget(self._card_preset)
+
+        self._card_custom = self._make_mode_card(
+            "Custom",
+            "Build your own record set from scratch. Define multiple records "
+            "with type, subdomain, TTL, and content. Supports {variable} "
+            "placeholders for dynamic values.",
+        )
+        self._card_custom.mousePressEvent = lambda e: self._select_mode("custom")
+        lay.addWidget(self._card_custom)
+
+        lay.addStretch()
         return w
+
+    def _make_mode_card(self, title, description):
+        card = QtWidgets.QFrame()
+        card.setObjectName("wizardModeCard")
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+        card.setProperty("selected", False)
+        self._style_mode_card(card, False)
+
+        card_lay = QtWidgets.QVBoxLayout(card)
+        card_lay.setContentsMargins(16, 14, 16, 14)
+        card_lay.setSpacing(6)
+        card_lay.addWidget(StrongBodyLabel(title))
+
+        desc = CaptionLabel(description)
+        desc.setWordWrap(True)
+        card_lay.addWidget(desc)
+
+        return card
+
+    def _style_mode_card(self, card, selected):
+        dark = isDarkTheme()
+        if selected:
+            bg = "rgba(0,120,212,0.12)" if dark else "rgba(0,120,212,0.08)"
+            border = "rgba(0,120,212,0.6)" if dark else "rgba(0,120,212,0.5)"
+        else:
+            bg = "rgba(255,255,255,0.04)" if dark else "rgba(0,0,0,0.03)"
+            border = "rgba(255,255,255,0.10)" if dark else "rgba(0,0,0,0.12)"
+        card.setStyleSheet(
+            f"QFrame#wizardModeCard {{"
+            f"  background: {bg}; border: 1px solid {border}; border-radius: 6px;"
+            f"}}"
+        )
+
+    def _select_mode(self, mode):
+        self._mode = mode
+        self._style_mode_card(self._card_preset, mode == "preset")
+        self._style_mode_card(self._card_custom, mode == "custom")
+        self._validate_current_step()
 
     def _build_step_template(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
