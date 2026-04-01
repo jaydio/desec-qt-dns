@@ -487,6 +487,29 @@ TEMPLATES = [
         ],
     },
 
+    {
+        "id": "brevo",
+        "name": "Brevo (Sendinblue)",
+        "description": "SPF, DKIM, and DMARC records for Brevo transactional and marketing email",
+        "category": "Email Providers",
+        "variables": {
+            "brevo_dkim_key": {
+                "label": "Brevo DKIM Public Key",
+                "hint": "Found in Brevo → Settings → Senders & IP → Domains → DNS Records",
+                "default": "",
+                "required": True,
+            },
+        },
+        "records": [
+            {"type": "TXT", "subname": "", "ttl": 3600,
+             "content": "\"v=spf1 include:spf.sendinblue.com ~all\""},
+            {"type": "TXT", "subname": "mail._domainkey", "ttl": 3600,
+             "content": "\"v=DKIM1; k=rsa; p={brevo_dkim_key}\""},
+            {"type": "TXT", "subname": "_dmarc", "ttl": 3600,
+             "content": "\"v=DMARC1; p=quarantine; rua=mailto:dmarc@{domain}\""},
+        ],
+    },
+
     # =========================================================================
     # Self-Hosted Email (3)
     # =========================================================================
