@@ -980,6 +980,10 @@ class RecordWidget(QtWidgets.QWidget):
                                           QtWidgets.QSizePolicy.Policy.Expanding)
         layout.addItem(button_spacer)
         
+        # Selection hint
+        _sel_hint = CaptionLabel("Ctrl+click \u2022 Shift+click \u2022 Ctrl+A")
+        layout.addWidget(_sel_hint)
+
         # Action buttons
         actions_layout = QtWidgets.QHBoxLayout()
         actions_layout.setContentsMargins(0, 6, 0, 6)  # Add spacing for visual separation

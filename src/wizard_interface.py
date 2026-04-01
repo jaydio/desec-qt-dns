@@ -1106,7 +1106,10 @@ class WizardInterface(QtWidgets.QWidget):
         splitter.setHandleWidth(1)
         splitter.setStyleSheet(SPLITTER_QSS)
 
-        # Template list — checkboxes for multi-select (click to toggle)
+        preset_lay.addWidget(CaptionLabel(
+            "Ctrl+click to select multiple \u2022 Shift+click for range \u2022 Ctrl+A to select all"
+        ))
+
         self._template_list = ListWidget()
         self._template_list.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
@@ -1207,7 +1210,7 @@ class WizardInterface(QtWidgets.QWidget):
         glay = QtWidgets.QVBoxLayout(group)
         glay.setSpacing(6)
         glay.addWidget(CaptionLabel(
-            "Ctrl+click to select multiple. Shift+click for range."
+            "Ctrl+click to select multiple \u2022 Shift+click for range \u2022 Ctrl+A to select all"
         ))
 
         # Search filter
