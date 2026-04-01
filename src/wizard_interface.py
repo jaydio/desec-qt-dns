@@ -191,7 +191,7 @@ class WizardInterface(QtWidgets.QWidget):
         self._btn_back.setVisible(idx > _STEP_MODE and idx < _STEP_EXECUTE)
 
         # Start Over: only visible on the last (execution) step
-        self._btn_reset.setVisible(idx == _STEP_EXECUTE)
+        self._btn_reset.setVisible(idx > _STEP_MODE)
 
         # Next button label and visibility
         if idx == _STEP_EXECUTE:
@@ -604,6 +604,7 @@ class WizardInterface(QtWidgets.QWidget):
     # ------------------------------------------------------------------
 
     def _populate_template_list(self):
+        self._template_list.blockSignals(True)
         self._template_list.clear()
         self._template_search.clear()
         for cat in CATEGORIES:
@@ -618,10 +619,16 @@ class WizardInterface(QtWidgets.QWidget):
                 if tpl["category"] != cat:
                     continue
                 item = QtWidgets.QListWidgetItem(
-                    f"  {tpl['name']}  ({len(tpl['records'])} records)"
+                    f"{tpl['name']}  ({len(tpl['records'])} records)"
                 )
+                item.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled
+                    | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                item.setCheckState(Qt.CheckState.Unchecked)
                 item.setData(Qt.ItemDataRole.UserRole, tpl["id"])
                 self._template_list.addItem(item)
+        self._template_list.blockSignals(False)
 
     def _filter_templates(self, text):
         ft = text.strip().lower()
@@ -655,18 +662,21 @@ class WizardInterface(QtWidgets.QWidget):
         if last_header is not None:
             last_header.setHidden(not last_header_has_children)
 
-    def _on_template_selected(self):
+    def _on_template_checked(self, item):
+        """Respond to checkbox toggle on a template list item."""
         selected = []
-        for item in self._template_list.selectedItems():
-            tpl_id = item.data(Qt.ItemDataRole.UserRole)
+        for i in range(self._template_list.count()):
+            it = self._template_list.item(i)
+            tpl_id = it.data(Qt.ItemDataRole.UserRole)
             if tpl_id is None:
                 continue
-            tpl = next((t for t in TEMPLATES if t["id"] == tpl_id), None)
-            if tpl:
-                selected.append(tpl)
+            if it.checkState() == Qt.CheckState.Checked:
+                tpl = next((t for t in TEMPLATES if t["id"] == tpl_id), None)
+                if tpl:
+                    selected.append(tpl)
         self._templates = selected
 
-        # Preview: combined records from all selected templates
+        # Preview: combined records from all checked templates
         all_records = []
         for tpl in selected:
             all_records.extend(tpl["records"])
@@ -680,7 +690,7 @@ class WizardInterface(QtWidgets.QWidget):
             )
         else:
             self._template_name_label.setText("")
-            self._template_desc_label.setText("")
+            self._template_desc_label.setText("Select one or more templates from the list.")
 
         self._template_records_table.setRowCount(len(all_records))
         for r, rec in enumerate(all_records):
@@ -728,15 +738,20 @@ class WizardInterface(QtWidgets.QWidget):
             ["Type", "Subdomain", "TTL", "Content"]
         )
         self._custom_table.verticalHeader().setVisible(False)
-        self._custom_table.horizontalHeader().setStretchLastSection(True)
         self._custom_table.horizontalHeader().setSectionResizeMode(
-            0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+            0, QtWidgets.QHeaderView.ResizeMode.Fixed
         )
+        self._custom_table.setColumnWidth(0, 100)   # Type
         self._custom_table.horizontalHeader().setSectionResizeMode(
-            1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+            1, QtWidgets.QHeaderView.ResizeMode.Fixed
         )
+        self._custom_table.setColumnWidth(1, 150)   # Subdomain
         self._custom_table.horizontalHeader().setSectionResizeMode(
-            2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+            2, QtWidgets.QHeaderView.ResizeMode.Fixed
+        )
+        self._custom_table.setColumnWidth(2, 140)   # TTL
+        self._custom_table.horizontalHeader().setSectionResizeMode(
+            3, QtWidgets.QHeaderView.ResizeMode.Stretch  # Content
         )
         self._custom_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
@@ -1047,29 +1062,27 @@ class WizardInterface(QtWidgets.QWidget):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
+        lay.setSpacing(6)
 
-        # ── Preset path: search + splitter (list | preview) ────────────
+        # Search bar — visible in both preset and custom mode
+        self._template_search = SearchLineEdit()
+        self._template_search.setPlaceholderText("Search templates...")
+        self._template_search.textChanged.connect(self._filter_templates)
+        lay.addWidget(self._template_search)
+
+        # ── Preset path: splitter (list | preview) ─────────────────────
         preset_w = QtWidgets.QWidget()
         preset_lay = QtWidgets.QVBoxLayout(preset_w)
         preset_lay.setContentsMargins(0, 0, 0, 0)
         preset_lay.setSpacing(6)
 
-        self._template_search = SearchLineEdit()
-        self._template_search.setPlaceholderText("Search templates...")
-        self._template_search.textChanged.connect(self._filter_templates)
-        preset_lay.addWidget(self._template_search)
-
         splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
         splitter.setStyleSheet(SPLITTER_QSS)
 
-        # Template list (multi-select)
+        # Template list — checkboxes for multi-select (click to toggle)
         self._template_list = ListWidget()
-        self._template_list.setSelectionMode(
-            QtWidgets.QAbstractItemView.SelectionMode.MultiSelection
-        )
-        self._template_list.itemSelectionChanged.connect(self._on_template_selected)
+        self._template_list.itemChanged.connect(self._on_template_checked)
         splitter.addWidget(self._template_list)
 
         # Preview panel
