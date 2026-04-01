@@ -7,7 +7,6 @@ Displays and manages DNS zones with optimized performance.
 """
 
 import logging
-import webbrowser
 from typing import List, Dict, Any, Tuple, Optional, Callable, Union
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -358,13 +357,6 @@ class ZoneListWidget(QtWidgets.QWidget):
         self.delete_zone_btn.clicked.connect(self.delete_selected_zone)
         actions_layout.addWidget(self.delete_zone_btn)
 
-        # Add DNSSEC validation button
-        self.validate_dnssec_btn = PushButton("Validate")
-        self.validate_dnssec_btn.clicked.connect(self.validate_dnssec)
-        self.validate_dnssec_btn.setEnabled(False)  # Disabled by default until a zone is selected
-        self.validate_dnssec_btn.setToolTip("Validate DNSSEC configuration for the selected domain")
-        actions_layout.addWidget(self.validate_dnssec_btn)
-
         # Add spacer to push buttons to the left (same as record widget)
         actions_layout.addStretch()
 
@@ -528,31 +520,6 @@ class ZoneListWidget(QtWidgets.QWidget):
         zone_name = zone_data.get('name', '')
 
         return zone_name, zone_data
-
-    def validate_dnssec(self) -> None:
-        """Open DNSSEC validation tool in browser for the selected domain."""
-        zone_name, _ = self.get_selected_zone()
-        if not zone_name:
-            return
-
-        try:
-            # Construct the URL for the DNSSEC validator
-            validation_url = f"https://dnssec-debugger.verisignlabs.com/{zone_name}"
-
-            # Open the URL in the default web browser
-            webbrowser.open(validation_url)
-
-            self.log_message.emit(f"Opening DNSSEC validation for {zone_name}...", "info")
-        except Exception as e:
-            self.log_message.emit(f"Failed to open DNSSEC validation: {str(e)}", "error")
-            logger.error(f"Failed to open DNSSEC validation: {e}")
-            InfoBar.error(
-                title="Could Not Open Browser",
-                content=str(e),
-                parent=self.window(),
-                duration=8000,
-                position=InfoBarPosition.TOP,
-            )
 
     def show_add_zone_dialog(self):
         """Signal that the user wants to add a zone (DnsInterface hosts the panel)."""
@@ -768,8 +735,6 @@ class ZoneListWidget(QtWidgets.QWidget):
                 self.delete_zone_btn.setToolTip("Select a zone to delete")
             else:
                 self.delete_zone_btn.setToolTip("")
-        if hasattr(self, 'validate_dnssec_btn'):
-            self.validate_dnssec_btn.setEnabled(n_selected > 0)
 
 
     def _remove_zone_from_model(self, zone_name):
