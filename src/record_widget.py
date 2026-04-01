@@ -919,13 +919,15 @@ class RecordWidget(QtWidgets.QWidget):
         # Add header layout to main layout
         layout.addLayout(header_layout)
 
-        # Queue progress bar (hidden by default, shown during active operations)
+        # Queue progress (hidden by default, shown during active operations)
         self._queue_progress_row = QtWidgets.QWidget()
-        qp_lay = QtWidgets.QHBoxLayout(self._queue_progress_row)
+        qp_lay = QtWidgets.QVBoxLayout(self._queue_progress_row)
         qp_lay.setContentsMargins(0, 4, 0, 4)
-        qp_lay.setSpacing(8)
+        qp_lay.setSpacing(4)
+        self._queue_summary = CaptionLabel("")
+        qp_lay.addWidget(self._queue_summary)
         self._queue_progress = ProgressBar()
-        qp_lay.addWidget(self._queue_progress, 1)
+        qp_lay.addWidget(self._queue_progress)
         self._queue_status = CaptionLabel("")
         qp_lay.addWidget(self._queue_status)
         self._queue_progress_row.setVisible(False)
@@ -1119,18 +1121,29 @@ class RecordWidget(QtWidgets.QWidget):
         self._pending_ops += 1
         self._queue_progress.setRange(0, self._pending_ops)
         self._queue_progress.setValue(self._completed_ops)
+        self._queue_summary.setText(
+            f"Processing {self._pending_ops} operation{'s' if self._pending_ops != 1 else ''}..."
+        )
         self._queue_status.setText(
-            f"{self._completed_ops}/{self._pending_ops}"
+            f"{self._completed_ops}/{self._pending_ops} complete"
         )
         self._queue_progress_row.setVisible(True)
 
-    def queue_op_finished(self):
+    def queue_op_finished(self, success=True):
         """Call when a record operation callback fires."""
         self._completed_ops += 1
         self._queue_progress.setValue(self._completed_ops)
         self._queue_status.setText(
-            f"{self._completed_ops}/{self._pending_ops}"
+            f"{self._completed_ops}/{self._pending_ops} complete"
         )
+        if self._completed_ops >= self._pending_ops:
+            self._queue_summary.setText(
+                f"Complete: {self._pending_ops} operation{'s' if self._pending_ops != 1 else ''}"
+            )
+            # Auto-hide after a short delay
+            QtCore.QTimer.singleShot(3000, self._hide_queue_progress)
+
+    def _hide_queue_progress(self):
         if self._completed_ops >= self._pending_ops:
             self._pending_ops = 0
             self._completed_ops = 0
