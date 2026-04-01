@@ -517,9 +517,11 @@ class RecordEditPanel(QtWidgets.QWidget):
             op = "updated" if is_edit else "created"
 
             def _on_done_callback(success, response):
+                parent = self.parent()
+                if hasattr(parent, 'queue_op_finished'):
+                    parent.queue_op_finished()
                 if success:
                     if self.version_manager and domain:
-                        parent = self.parent()
                         recs = getattr(parent, 'records', None)
                         if recs:
                             self.version_manager.snapshot(
@@ -555,6 +557,9 @@ class RecordEditPanel(QtWidgets.QWidget):
                 callback=_on_done_callback,
             )
             self.api_queue.enqueue(item)
+            parent = self.parent()
+            if hasattr(parent, 'queue_op_started'):
+                parent.queue_op_started()
 
             # Close panel immediately — the queue processes in the background
             self._done_btn.setEnabled(True)
@@ -976,10 +981,25 @@ class RecordWidget(QtWidgets.QWidget):
         layout.addWidget(self.records_table, 1)
         
         # Add spacer to push buttons to bottom for alignment with zone list widget
-        button_spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum, 
+        button_spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum,
                                           QtWidgets.QSizePolicy.Policy.Expanding)
         layout.addItem(button_spacer)
-        
+
+        # Queue progress bar (hidden by default, shown during active operations)
+        self._queue_progress_row = QtWidgets.QWidget()
+        qp_lay = QtWidgets.QHBoxLayout(self._queue_progress_row)
+        qp_lay.setContentsMargins(0, 4, 0, 4)
+        qp_lay.setSpacing(8)
+        self._queue_progress = ProgressBar()
+        qp_lay.addWidget(self._queue_progress, 1)
+        self._queue_status = CaptionLabel("")
+        qp_lay.addWidget(self._queue_status)
+        self._queue_progress_row.setVisible(False)
+        layout.addWidget(self._queue_progress_row)
+
+        self._pending_ops = 0
+        self._completed_ops = 0
+
         # Action buttons
         actions_layout = QtWidgets.QHBoxLayout()
         actions_layout.setContentsMargins(0, 6, 0, 6)  # Add spacing for visual separation
@@ -1094,6 +1114,28 @@ class RecordWidget(QtWidgets.QWidget):
             self.select_none_btn.setEnabled(self.can_edit and has_rows)
             self._update_bulk_btn()
     
+    def queue_op_started(self):
+        """Call when a record operation is enqueued."""
+        self._pending_ops += 1
+        self._queue_progress.setRange(0, self._pending_ops)
+        self._queue_progress.setValue(self._completed_ops)
+        self._queue_status.setText(
+            f"{self._completed_ops}/{self._pending_ops}"
+        )
+        self._queue_progress_row.setVisible(True)
+
+    def queue_op_finished(self):
+        """Call when a record operation callback fires."""
+        self._completed_ops += 1
+        self._queue_progress.setValue(self._completed_ops)
+        self._queue_status.setText(
+            f"{self._completed_ops}/{self._pending_ops}"
+        )
+        if self._completed_ops >= self._pending_ops:
+            self._pending_ops = 0
+            self._completed_ops = 0
+            self._queue_progress_row.setVisible(False)
+
     def refresh_records(self):
         """Refresh the records for the current domain."""
         if not self.current_domain:
@@ -1596,6 +1638,7 @@ class RecordWidget(QtWidgets.QWidget):
 
             if self.api_queue:
                 def _on_done(success, response):
+                    self.queue_op_finished()
                     if success:
                         if self.version_manager and domain:
                             self.version_manager.snapshot(
@@ -1628,6 +1671,7 @@ class RecordWidget(QtWidgets.QWidget):
                     callback=_on_done,
                 )
                 self.api_queue.enqueue(item)
+                self.queue_op_started()
             else:
                 success, response = self.api_client.delete_record(domain, subname, rtype)
                 if success:
