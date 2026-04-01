@@ -68,6 +68,21 @@ class WizardInterface(QtWidgets.QWidget):
     log_message    = Signal(str, str)   # (message, level)
     records_changed = Signal()
 
+    _RECORD_TYPES = [
+        "A", "AAAA", "CAA", "CNAME", "DNAME", "HTTPS", "MX", "NAPTR",
+        "NS", "PTR", "SPF", "SRV", "SSHFP", "SVCB", "TLSA", "TXT", "URI",
+    ]
+
+    _TTL_OPTIONS = [
+        ("60", "1 min"),
+        ("300", "5 min"),
+        ("900", "15 min"),
+        ("3600", "1 hour"),
+        ("21600", "6 hours"),
+        ("43200", "12 hours"),
+        ("86400", "24 hours"),
+    ]
+
     def __init__(self, api_client, cache_manager, api_queue=None,
                  version_manager=None, parent=None):
         super().__init__(parent)
@@ -269,7 +284,12 @@ class WizardInterface(QtWidgets.QWidget):
     # ------------------------------------------------------------------
 
     def _validate_template_step(self) -> bool:
-        return self._template is not None or len(self._custom_records) > 0
+        if self._mode == "preset":
+            return self._template is not None
+        else:
+            records = self._read_custom_records()
+            self._custom_records = records
+            return len(records) > 0
 
     def _validate_variables_step(self) -> bool:
         return True
@@ -358,13 +378,115 @@ class WizardInterface(QtWidgets.QWidget):
         self._validate_current_step()
 
     def _build_custom_builder(self):
-        """Custom record builder — placeholder, implemented in Task 6."""
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
-        lay.addWidget(StrongBodyLabel("Custom Record Builder"))
-        lay.addWidget(CaptionLabel("Build your own record set — placeholder"))
-        lay.addStretch()
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+
+        lay.addWidget(StrongBodyLabel("Build Custom Record Set"))
+        lay.addWidget(CaptionLabel(
+            "Add records below. Use {variable} placeholders in subdomain or "
+            "content fields (e.g. {domain}, {ip_address}). Variables will be "
+            "prompted in the next step."
+        ))
+
+        toolbar = QtWidgets.QHBoxLayout()
+        toolbar.setSpacing(8)
+        btn_add = PushButton("Add Row")
+        btn_add.clicked.connect(self._custom_add_row)
+        toolbar.addWidget(btn_add)
+        btn_remove = PushButton("Remove Selected")
+        btn_remove.clicked.connect(self._custom_remove_row)
+        toolbar.addWidget(btn_remove)
+        toolbar.addStretch()
+        self._custom_row_count = CaptionLabel("0 records")
+        toolbar.addWidget(self._custom_row_count)
+        lay.addLayout(toolbar)
+
+        self._custom_table = TableWidget()
+        self._custom_table.setColumnCount(4)
+        self._custom_table.setHorizontalHeaderLabels(
+            ["Type", "Subdomain", "TTL", "Content"]
+        )
+        self._custom_table.horizontalHeader().setStretchLastSection(True)
+        self._custom_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self._custom_table.cellChanged.connect(
+            lambda: self._validate_current_step()
+        )
+        lay.addWidget(self._custom_table, 1)
+
         return w
+
+    def _custom_add_row(self):
+        row = self._custom_table.rowCount()
+        self._custom_table.insertRow(row)
+
+        type_combo = ComboBox()
+        for t in self._RECORD_TYPES:
+            type_combo.addItem(t)
+        type_combo.setCurrentIndex(0)
+        self._custom_table.setCellWidget(row, 0, type_combo)
+
+        sub_edit = LineEdit()
+        sub_edit.setPlaceholderText("@ (apex)")
+        self._custom_table.setCellWidget(row, 1, sub_edit)
+
+        ttl_combo = ComboBox()
+        for val, label in self._TTL_OPTIONS:
+            ttl_combo.addItem(f"{label} ({val}s)")
+        ttl_combo.setCurrentIndex(3)  # default 1 hour
+        self._custom_table.setCellWidget(row, 2, ttl_combo)
+
+        content_edit = LineEdit()
+        content_edit.setPlaceholderText("Record content...")
+        self._custom_table.setCellWidget(row, 3, content_edit)
+
+        self._custom_row_count.setText(
+            f"{self._custom_table.rowCount()} record"
+            f"{'s' if self._custom_table.rowCount() != 1 else ''}"
+        )
+        self._validate_current_step()
+
+    def _custom_remove_row(self):
+        rows = sorted(set(i.row() for i in self._custom_table.selectedItems()),
+                      reverse=True)
+        if not rows:
+            rows = sorted(set(idx.row() for idx in
+                              self._custom_table.selectionModel().selectedRows()),
+                          reverse=True)
+        for r in rows:
+            self._custom_table.removeRow(r)
+        self._custom_row_count.setText(
+            f"{self._custom_table.rowCount()} record"
+            f"{'s' if self._custom_table.rowCount() != 1 else ''}"
+        )
+        self._validate_current_step()
+
+    def _read_custom_records(self):
+        """Read the custom table into a list of record dicts."""
+        records = []
+        for row in range(self._custom_table.rowCount()):
+            type_combo = self._custom_table.cellWidget(row, 0)
+            sub_edit = self._custom_table.cellWidget(row, 1)
+            ttl_combo = self._custom_table.cellWidget(row, 2)
+            content_edit = self._custom_table.cellWidget(row, 3)
+            if not type_combo or not content_edit:
+                continue
+            content = content_edit.text().strip()
+            if not content:
+                continue
+            ttl_text = ttl_combo.currentText() if ttl_combo else "3600"
+            ttl_match = re.search(r'\((\d+)s\)', ttl_text)
+            ttl = int(ttl_match.group(1)) if ttl_match else 3600
+            records.append({
+                "type": type_combo.currentText(),
+                "subname": sub_edit.text().strip() if sub_edit else "",
+                "ttl": ttl,
+                "content": content,
+            })
+        return records
 
     # ------------------------------------------------------------------
     # Execution placeholder
