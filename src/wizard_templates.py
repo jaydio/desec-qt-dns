@@ -488,19 +488,55 @@ TEMPLATES = [
     },
 
     {
-        "id": "brevo",
-        "name": "Brevo (Sendinblue)",
-        "description": "SPF, DKIM, and DMARC records for Brevo transactional and marketing email",
+        "id": "brevo_shared",
+        "name": "Brevo — Shared IP",
+        "description": "Brevo code, DKIM, and DMARC for shared IP sending (default Brevo setup)",
         "category": "Email Providers",
         "variables": {
+            "brevo_code": {
+                "label": "Brevo Code",
+                "hint": "Found in Brevo → Settings → Senders & IP → Domains (e.g. brevo-code:xxxxxxxx)",
+                "default": "",
+                "required": True,
+            },
             "brevo_dkim_key": {
                 "label": "Brevo DKIM Public Key",
-                "hint": "Found in Brevo → Settings → Senders & IP → Domains → DNS Records",
+                "hint": "DKIM value from Brevo → Settings → Senders & IP → Domains → DNS Records",
                 "default": "",
                 "required": True,
             },
         },
         "records": [
+            {"type": "TXT", "subname": "", "ttl": 3600,
+             "content": "\"{brevo_code}\""},
+            {"type": "TXT", "subname": "mail._domainkey", "ttl": 3600,
+             "content": "\"v=DKIM1; k=rsa; p={brevo_dkim_key}\""},
+            {"type": "TXT", "subname": "_dmarc", "ttl": 3600,
+             "content": "\"v=DMARC1; p=quarantine; rua=mailto:dmarc@{domain}\""},
+        ],
+    },
+    {
+        "id": "brevo_dedicated",
+        "name": "Brevo — Dedicated IP",
+        "description": "Brevo code, SPF, DKIM, and DMARC for dedicated IP sending",
+        "category": "Email Providers",
+        "variables": {
+            "brevo_code": {
+                "label": "Brevo Code",
+                "hint": "Found in Brevo → Settings → Senders & IP → Domains (e.g. brevo-code:xxxxxxxx)",
+                "default": "",
+                "required": True,
+            },
+            "brevo_dkim_key": {
+                "label": "Brevo DKIM Public Key",
+                "hint": "DKIM value from Brevo → Settings → Senders & IP → Domains → DNS Records",
+                "default": "",
+                "required": True,
+            },
+        },
+        "records": [
+            {"type": "TXT", "subname": "", "ttl": 3600,
+             "content": "\"{brevo_code}\""},
             {"type": "TXT", "subname": "", "ttl": 3600,
              "content": "\"v=spf1 include:spf.sendinblue.com ~all\""},
             {"type": "TXT", "subname": "mail._domainkey", "ttl": 3600,
