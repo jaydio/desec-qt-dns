@@ -13,10 +13,23 @@ A PySide6 desktop application with Fluent Design for managing DNS zones and reco
 ### DNS Management
 - **Zone management** — create and delete DNS zones; zone list sorted alphabetically; header shows `Total zones: N/limit` using your account's domain quota fetched live from the API
 - **Record management** — full CRUD for 38+ DNS record types with format hints, examples, and inline validation via a slide-in edit panel
-- **DNSSEC overview** — dedicated sidebar page showing DS and DNSKEY records for any zone, with one-click copy and RFC-standard formatting
+- **DNSSEC overview** — dedicated sidebar page showing DS and DNSKEY records for any zone, with one-click copy, RFC-standard formatting, and collapsible DNSSEC migration warning
 - **Batch actions** — select multiple records with checkboxes, then bulk-delete with one click; Select All / Select None shortcuts
 - **Multiline records** — enter multiple values per RRset (one per line); configurable display in Settings
 - **Version history** — Git-based zone versioning with snapshot, timeline browse, and one-click restore
+
+### DNS Record Wizard
+- **Step-by-step wizard** — 7-step guided flow for creating DNS records across multiple domains
+- **70 preset templates** across 18 categories — Google, Microsoft 365, Proton, Fastmail, Zoho, Tutanota, Infomaniak, Mailfence, Brevo, Mailgun, SendGrid, Amazon SES, Postmark, Shopify, Squarespace, GitHub Pages, Netlify, Vercel, Matrix, XMPP, ACME DNS-01, 13 DNS providers, and more
+- **Custom mode** — build arbitrary record sets with `{variable}` placeholder support
+- **Multi-template selection** — Ctrl+click to combine multiple presets in a single run
+- **Multi-domain targeting** — apply records to many zones at once with search filter and Select All/None
+- **Conflict handling** — choose Merge, Replace, or Skip when records already exist
+- **RRset grouping** — records with the same subname+type are automatically bundled into a single API call
+- **Preview with conflict detection** — review all operations before execution
+- **Real-time execution** — progress bar, per-record success/failure, retry failed
+
+![Wizard — Preset Selection](img/18_dark_wizard_multi_select.png)
 
 ### Search & Organisation
 - **Global Search & Replace** — search records across all zones by subname, type, content, TTL, or zone name (plain text or regex); bulk-replace content, rename subnames, update TTLs, delete records, or export results — with a full change log
