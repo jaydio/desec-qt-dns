@@ -138,6 +138,15 @@ This document outlines planned features and improvements for future releases of 
   - [ ] Version history (git repos) scoped to active profile
   - [ ] Migration of shared history on first profile switch
 
+- [ ] **SPF Record Builder & RRset Merging**
+  Intelligent handling of SPF and other TXT records that need merging or length management.
+  - [ ] SPF builder: visual editor for constructing SPF records from includes, IPs, and mechanisms
+  - [ ] SPF flattening/compression: resolve `include:` chains to direct IP ranges to reduce DNS lookups (10-lookup limit)
+  - [ ] SPF record splitting: auto-split long SPF into multiple `include:` sub-records when exceeding 255-byte TXT limit
+  - [ ] TXT RRset merging: when wizard/batch creates TXT records at the same subname, offer to merge into existing RRset
+  - [ ] Length validation: warn when TXT records approach the 512-byte UDP response limit or 255-byte string limit
+  - [ ] FQDN-to-IP resolution for corporate SPF lists (replace verbose include chains with ip4:/ip6: blocks)
+
 - [ ] **Multi-Select UX Discoverability**
   Make it clearer in lists and tables where multi-selection is available.
   - [ ] Subtle visual indicator or onboarding tooltip for multi-select (Ctrl+click, Shift+click, Ctrl+A)
