@@ -112,11 +112,12 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _setup_ui(self):
         outer = QtWidgets.QVBoxLayout(self)
-        outer.setContentsMargins(6, 6, 6, 6)
-        outer.setSpacing(6)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
         # ── Title row ──────────────────────────────────────────────────
         title_row = QtWidgets.QHBoxLayout()
+        title_row.setContentsMargins(6, 6, 6, 6)
         title_row.setSpacing(8)
 
         self._title_label = StrongBodyLabel("DNS Record Wizard")
@@ -128,7 +129,12 @@ class WizardInterface(QtWidgets.QWidget):
 
         outer.addLayout(title_row)
 
-        # ── Step stack ─────────────────────────────────────────────────
+        # ── Step content ───────────────────────────────────────────────
+        step_wrapper = QtWidgets.QWidget()
+        step_lay = QtWidgets.QVBoxLayout(step_wrapper)
+        step_lay.setContentsMargins(6, 0, 6, 6)
+        step_lay.setSpacing(6)
+
         self._stack = QtWidgets.QStackedWidget()
         self._stack.addWidget(self._build_step_mode())
         self._stack.addWidget(self._build_step_template())
@@ -137,10 +143,11 @@ class WizardInterface(QtWidgets.QWidget):
         self._stack.addWidget(self._build_step_conflict())
         self._stack.addWidget(self._build_step_preview())
         self._stack.addWidget(self._build_step_execute())
-        outer.addWidget(self._stack, 1)
+        step_lay.addWidget(self._stack, 1)
 
         # ── Navigation bar ─────────────────────────────────────────────
         nav_row = QtWidgets.QHBoxLayout()
+        nav_row.setContentsMargins(0, 6, 0, 0)
         nav_row.setSpacing(8)
 
         self._btn_reset = PushButton("Start Over")
@@ -159,7 +166,8 @@ class WizardInterface(QtWidgets.QWidget):
         self._btn_next.clicked.connect(self._go_next)
         nav_row.addWidget(self._btn_next)
 
-        outer.addLayout(nav_row)
+        step_lay.addLayout(nav_row)
+        outer.addWidget(step_wrapper, 1)
 
         # Initialise to step 0
         self._go_to_step(_STEP_MODE)
