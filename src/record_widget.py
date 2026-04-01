@@ -1573,6 +1573,7 @@ class RecordWidget(QtWidgets.QWidget):
 
                     def _make_cb(lbl):
                         def _cb(success, data):
+                            self.queue_op_finished()
                             self._on_bulk_record_done(success, lbl)
                             if success:
                                 self._bulk_deleted += 1
@@ -1592,6 +1593,7 @@ class RecordWidget(QtWidgets.QWidget):
                         callback=_make_cb(label),
                     )
                     self.api_queue.enqueue(item)
+                    self.queue_op_started()
             else:
                 self._bulk_worker = _BulkDeleteWorker(self.api_client, self.current_domain, records)
                 self._bulk_worker.record_done.connect(self._on_bulk_record_done)
