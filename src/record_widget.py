@@ -11,7 +11,7 @@ import time
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtCore import Qt, Signal, QThread, QThreadPool, QPropertyAnimation, QEasingCurve
 from qfluentwidgets import (PushButton, PrimaryPushButton, SearchLineEdit, TableWidget, TextEdit,
-                             LineEdit, StrongBodyLabel, CaptionLabel, SubtitleLabel,
+                             LineEdit, StrongBodyLabel, CaptionLabel, SubtitleLabel, ProgressBar,
                              isDarkTheme, InfoBar, InfoBarPosition)
 
 from confirm_drawer import DeleteConfirmDrawer
