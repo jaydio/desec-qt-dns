@@ -207,16 +207,19 @@ class WizardInterface(QtWidgets.QWidget):
         self._validate_current_step()
 
     def _go_next(self):
-        """Advance to the next step (or execute on the preview step)."""
+        current = self._stack.currentIndex()
         if not self._validate_current_step():
             return
-
-        current = self._stack.currentIndex()
-
+        # Store custom records when leaving step 2
+        if current == _STEP_TEMPLATE and self._mode == "custom":
+            self._custom_records = self._read_custom_records()
+        # Collect variables when leaving step 3
+        if current == _STEP_VARIABLES:
+            self._variables = self._collect_variables()
         if current == _STEP_PREVIEW:
             self._execute()
             self._go_to_step(_STEP_EXECUTE)
-        else:
+        elif current < _STEP_EXECUTE:
             self._go_to_step(current + 1)
 
     def _go_back(self):
