@@ -278,9 +278,11 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _on_enter_template_step(self):
         if self._mode == "preset":
+            self._template_search.setVisible(True)
             self._template_stack.setCurrentIndex(0)
             self._populate_template_list()
         else:
+            self._template_search.setVisible(False)
             self._template_stack.setCurrentIndex(1)
 
     def _on_enter_variables_step(self):

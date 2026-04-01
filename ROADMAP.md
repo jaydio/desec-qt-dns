@@ -98,26 +98,32 @@ This document outlines planned features and improvements for future releases of 
   - [x] One-click restore via bulk API PUT
   - [x] Delete version history per zone
 
-- [ ] **Record Creation Wizards**
-  Guided setup for common DNS record configurations, including:
-  - [ ] Google Workspace / Gmail
-  - [ ] Cloudflare
-  - [ ] Microsoft 365
-  - [ ] Mail-in-a-Box
-  - [ ] Cloudron
-  - [ ] Mailcow
-  - [ ] rDNS Zone Setup
-    - Create reverse DNS zones from IP prefixes (IPv4/IPv6)
-    - Automatically generate PTR records for all IPs in the prefix
-    - Customizable PTR record templates (e.g., {ip}.example.com or {dash-ip}.example.com)
-    - Support for both in-addr.arpa (IPv4) and ip6.arpa (IPv6) zones
-    - Batch PTR record generation with configurable TTL
-    - Preview of zone configuration before creation
-  - [ ] Zimbra
-  - [ ] Redmail
-  - [ ] Let's Encrypt DNS challenges
-  - [ ] User defined templates
-  *(More to come)*
+- [x] **Record Creation Wizard** (in v2.1.0-beta)
+  Step-by-step wizard for creating DNS records across multiple domains.
+  - [x] Preset templates: Google Workspace, Microsoft 365, Fastmail, Proton Mail, Basic MX+SPF+DMARC
+  - [x] Chat/Social: Matrix (Synapse), XMPP/Jabber
+  - [x] Web: Let's Encrypt CAA, Web Hosting CNAME
+  - [x] Security: DMARC, SPF, MTA-STS, DANE/TLSA
+  - [x] ACME/Certificates: DNS-01 TXT, DNS-01 CNAME delegation, CAA with account binding
+  - [x] Verification: Google Site, Facebook Domain
+  - [x] Custom record builder with {variable} substitution
+  - [x] Multi-template selection (combine multiple presets in one run)
+  - [x] Multi-domain checkbox selection with search filter
+  - [x] Conflict strategy: Merge / Replace / Skip
+  - [x] Preview with conflict detection before execution
+  - [x] APIQueue integration with progress tracking and retry
+  - [ ] Slide-in template search panel (like RecordEditPanel)
+  - [ ] Extended email templates: Tutanota/Tuta, Infomaniak, Mailfence, Zoho Mail
+  - [ ] Extended web hosting: Netlify, Vercel, GitHub Pages, Cloudflare Pages
+  - [ ] Service provider bundles: Google (Workspace + Verification), Microsoft (365 + Teams + Intune), Proton (Mail + VPN)
+  - [ ] Subdomain delegation mode (create subdomain + NS records)
+
+- [ ] **Reverse DNS Zone Creation**
+  Batch-create reverse DNS zones from IP prefixes via the Add Zone dialog.
+  - [ ] Forward vs reverse toggle in Add Zone
+  - [ ] Accept IPv4 /24 and IPv6 /64 prefixes
+  - [ ] Auto-encode to in-addr.arpa / ip6.arpa zone names
+  - [ ] Batch zone creation via APIQueue
 
 ---
 
