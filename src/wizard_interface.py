@@ -341,6 +341,7 @@ class WizardInterface(QtWidgets.QWidget):
                 self._var_table.setItem(r, 1, ro_item)
             else:
                 edit = LineEdit()
+                edit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
                 edit.setPlaceholderText(hint if hint else f"Value for {label}")
                 if default:
                     edit.setText(default)
@@ -433,7 +434,7 @@ class WizardInterface(QtWidgets.QWidget):
             self._preview_table.setItem(r, 1, QtWidgets.QTableWidgetItem(row["subname"] or "@"))
             self._preview_table.setItem(r, 2, QtWidgets.QTableWidgetItem(row["type"]))
             self._preview_table.setItem(r, 3, QtWidgets.QTableWidgetItem(str(row["ttl"])))
-            content_display = "\n".join(row["contents"])
+            content_display = " | ".join(row["contents"])
             self._preview_table.setItem(r, 4, QtWidgets.QTableWidgetItem(content_display))
 
             if row["errors"]:
@@ -475,6 +476,8 @@ class WizardInterface(QtWidgets.QWidget):
         if detail:
             parts.append(f"({', '.join(detail)})")
         self._preview_summary.setText(" ".join(parts))
+
+        self._preview_table.resizeRowsToContents()
 
         # Disable Execute if nothing actionable or there are validation errors
         self._btn_next.setEnabled(actionable > 0 and n_error == 0)
@@ -787,6 +790,7 @@ class WizardInterface(QtWidgets.QWidget):
         self._custom_table.insertRow(row)
 
         type_combo = ComboBox()
+        type_combo.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         for t in self._RECORD_TYPES:
             type_combo.addItem(t)
         type_combo.setCurrentIndex(0)
@@ -796,16 +800,19 @@ class WizardInterface(QtWidgets.QWidget):
         self._custom_table.setCellWidget(row, 0, type_combo)
 
         sub_edit = LineEdit()
+        sub_edit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         sub_edit.setPlaceholderText("@ (apex)")
         self._custom_table.setCellWidget(row, 1, sub_edit)
 
         ttl_combo = ComboBox()
+        ttl_combo.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         for val, label in self._TTL_OPTIONS:
             ttl_combo.addItem(f"{label} ({val}s)")
         ttl_combo.setCurrentIndex(0)  # default 1 hour
         self._custom_table.setCellWidget(row, 2, ttl_combo)
 
         content_edit = LineEdit()
+        content_edit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         content_edit.setPlaceholderText("Record content...")
         content_edit.textChanged.connect(lambda: self._validate_current_step())
         self._custom_table.setCellWidget(row, 3, content_edit)
