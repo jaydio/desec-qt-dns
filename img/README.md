@@ -13,7 +13,7 @@ All screenshots are from the dark theme on Linux. The sidebar is expanded to its
 - Records table search bar with dedicated **Type** and **TTL** filter fields to the right
 - Records show colour-coded type labels (TXT, AAAA, A, NS, CNAME) with TTL and content
 - Toolbar: **Add Record**, **Select All**, **Select None**, **Delete Selected**
-- Sidebar shows all top-level items: DNS, DNSSEC, Search, Import, Export, Queue, History, Profile, Tokens, Settings
+- Sidebar shows all top-level items: DNS, DNSSEC, Search, **Wizard**, Import, Export, Queue, History, Profile, Tokens, Settings
 - Bottom bar: About, Log Console, Sync, Online status (green), last sync timestamp
 
 ---
@@ -50,6 +50,7 @@ All screenshots are from the dark theme on Linux. The sidebar is expanded to its
   - SHA-384 section: Key Tag 18684 · Algorithm 13 · Digest Type 4 · full digest hex shown
 - **DNSKEY Format** card: Flags 257 (KSK) · Protocol 3 · Algorithm 13 (ECDSAP256SHA256) · Public Key field
 - **Copy** button on each card; **Validate DNSSEC setup** links to Verisign Debugger and DNSViz
+- Collapsible amber **DNSSEC migration warning** card at the bottom with multi-signer (RFC 8901) and "go insecure" guidance
 
 ---
 
@@ -82,7 +83,7 @@ All screenshots are from the dark theme on Linux. The sidebar is expanded to its
 
 <img src="07_dark_export.png" width="100%">
 
-- **Export** sidebar page; left pane: scrollable zone list (42 zones); `dnsdisaster.zone` selected
+- **Export** sidebar page; left pane: search filter + scrollable zone list (42 zones); `dnsdisaster.zone` selected
 - Right pane — Export Settings:
   - **Format**: JSON, YAML, BIND Zone File, djbdns/tinydns
   - **Options**: Include metadata (timestamps) checkbox ticked
@@ -180,3 +181,86 @@ All screenshots are from the dark theme on Linux. The sidebar is expanded to its
 - All sidebar items visible as icons only: globe, shield (DNSSEC), search, arrows (Import/Export), send (Queue), update (History), people, certificate, settings, info, history, sync, wifi
 - Provides maximum horizontal space for the two-pane DNS view
 - Collapse/expand toggled with the hamburger button at the top-left
+
+---
+
+## 16 — Wizard: Choose Mode
+
+<img src="16_dark_wizard_mode.png" width="100%">
+
+- **Wizard** sidebar page — Step 1 of 7: Choose Mode
+- Two clickable cards: **Use a Preset** (curated templates) and **Custom** (build your own record set)
+- Cards show description text; border highlights on selection
+- **Next** button at bottom right (disabled until a mode is selected)
+
+---
+
+## 17 — Wizard: Preset Template List
+
+<img src="17_dark_wizard_presets.png" width="100%">
+
+- Step 2 of 7: Select Template (preset mode)
+- Left pane: categorised template list grouped by section headers (Google, Microsoft 365, Proton, Email Providers, Self-Hosted Email, Transactional Email, Web Platforms, etc.)
+- Each template shows record count; **Search templates** filter bar at the top
+- Right pane: read-only preview table (Type, Name, TTL, Content) for the selected template
+- **Start Over** and **Back** / **Next** navigation at the bottom
+
+---
+
+## 18 — Wizard: Multi-Template Selection
+
+<img src="18_dark_wizard_multi_select.png" width="100%">
+
+- Step 2 with multiple templates selected via Ctrl+click (Mailgun + Shopify)
+- Header shows **"2 templates selected"** with template names
+- Preview table combines records from all selected templates (MX, TXT, A, CNAME across both)
+- Demonstrates combining unrelated services in a single wizard run
+
+---
+
+## 19 — Wizard: Variable Input
+
+<img src="19_dark_wizard_variables.png" width="100%">
+
+- Step 3 of 7: Fill In Variables
+- Clean table layout with columns: **Variable**, **Value**, **Hint**
+- `{domain}` shown as automatic (read-only); `{subdomain_prefix}` optional
+- Template-specific variables with pre-filled defaults, placeholder hints, and Required/Optional status
+- Variables auto-discovered from all selected templates
+
+---
+
+## 20 — Wizard: Domain Selection
+
+<img src="20_dark_wizard_domains.png" width="100%">
+
+- Step 4 of 7: Select Domains
+- Full-height ListView with Ctrl+click / Shift+click multi-select (matching Export page pattern)
+- **Filter domains** search bar at the top; count label ("1 of 42 domains selected")
+- **Select All** / **Select None** buttons at the bottom
+- Multiple domains highlighted with teal accent bar
+
+---
+
+## 21 — Wizard: Conflict Strategy
+
+<img src="21_dark_wizard_conflict.png" width="100%">
+
+- Step 5 of 7: Conflict Strategy
+- Three radio options with descriptions:
+  - **Merge** — append to existing record set
+  - **Replace** — overwrite existing (selected in screenshot, shown with filled radio)
+  - **Skip** — leave existing untouched
+- Applies when a record with the same subdomain + type already exists on the target domain
+
+---
+
+## 22 — Wizard: Execution Results
+
+<img src="22_dark_wizard_execution.png" width="100%">
+
+- Step 7 of 7: Execution
+- Summary: **"Complete: 6/6 succeeded"** with full-width teal progress bar
+- Results table: Domain, Name, Type, Content, Result columns
+- All 6 operations show green **"Success"** — Mailgun MX (grouped 2 values), SPF TXT, DKIM TXT, Shopify A, CNAME www, verification TXT
+- **Start Over** button to begin a new wizard run
