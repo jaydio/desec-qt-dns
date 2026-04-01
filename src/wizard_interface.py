@@ -962,16 +962,6 @@ class WizardInterface(QtWidgets.QWidget):
             if result_item:
                 result_item.setText("Success")
                 result_item.setForeground(QtGui.QColor("#43A047"))
-            if self._version_manager:
-                try:
-                    cached_recs, _ = self._cache.get_cached_records(domain)
-                    if cached_recs:
-                        self._version_manager.snapshot(
-                            domain, cached_recs,
-                            f"Wizard: batch record creation",
-                        )
-                except Exception:
-                    pass
         else:
             self._exec_failed += 1
             err = str(response) if response else "Unknown error"
@@ -997,6 +987,37 @@ class WizardInterface(QtWidgets.QWidget):
                 f"Wizard: {self._exec_succeeded}/{self._exec_total} records created",
                 "info" if self._exec_failed == 0 else "warning",
             )
+            # Snapshot each affected domain with fresh records from API
+            if self._version_manager and self._exec_succeeded > 0:
+                self._snapshot_affected_domains()
+
+    def _snapshot_affected_domains(self):
+        """Fetch fresh records from API for each affected domain and snapshot."""
+        affected = set()
+        for row in self._exec_actionable:
+            if row["domain"] not in affected:
+                affected.add(row["domain"])
+
+        for domain in affected:
+            def _on_records(success, data, d=domain):
+                if success and isinstance(data, list):
+                    try:
+                        self._version_manager.snapshot(
+                            d, data,
+                            f"[{d}] Wizard: batch record creation",
+                        )
+                    except Exception:
+                        pass
+
+            item = QueueItem(
+                priority=PRIORITY_NORMAL,
+                category="wizard",
+                action=f"Snapshot {domain} after wizard",
+                callable=self._api.get_records,
+                args=(domain,),
+                callback=_on_records,
+            )
+            self._api_queue.enqueue(item)
 
     def _retry_failed(self):
         """Re-enqueue only the failed items."""

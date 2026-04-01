@@ -973,21 +973,53 @@ class MainWindow(FluentWindow):
             self.api_queue.enqueue(item)
 
     def _enqueue_restore_records(self, domain_name, commit_hash, records):
-        """Enqueue a single bulk PUT to restore all record sets at once."""
+        """Enqueue a single bulk PUT to restore all record sets at once.
+
+        The deSEC bulk PUT is additive — it creates/updates listed RRsets
+        but does NOT delete RRsets absent from the list.  To do a true
+        restore, we first fetch the current zone state, then include
+        empty-record entries for any RRset that exists now but isn't in
+        the target snapshot (which tells the API to delete them).
+        """
         self.log_message(
             f"Restoring {len(records)} record sets for {domain_name} "
             f"from version {commit_hash[:8]}...", "info"
         )
 
-        # Build the array of RRset dicts the bulk PUT endpoint expects
-        rrsets = []
+        # Build the target RRset list from the snapshot
+        target_rrsets = []
+        target_keys = set()
         for rec in records:
-            rrsets.append({
-                "subname": rec.get("subname", ""),
-                "type": rec.get("type", ""),
+            subname = rec.get("subname", "")
+            rtype = rec.get("type", "")
+            target_keys.add((subname, rtype))
+            target_rrsets.append({
+                "subname": subname,
+                "type": rtype,
                 "ttl": rec.get("ttl", 3600),
                 "records": rec.get("records", []),
             })
+
+        # Fetch current records to find RRsets that need deletion
+        current, _ = self.cache_manager.get_cached_records(domain_name)
+        if not current:
+            ok, current = self.api_client.get_records(domain_name)
+            if not ok:
+                current = []
+
+        # Add empty-record entries for RRsets that exist now but not in snapshot
+        # (skip NS at apex — deSEC manages those)
+        for rr in (current or []):
+            key = (rr.get("subname", ""), rr.get("type", ""))
+            if key not in target_keys and key[1] != "NS":
+                target_rrsets.append({
+                    "subname": key[0],
+                    "type": key[1],
+                    "ttl": rr.get("ttl", 3600),
+                    "records": [],  # empty = delete this RRset
+                })
+
+        rrsets = target_rrsets
 
         def _on_restore_done(success, data):
             if success:
