@@ -138,6 +138,12 @@ This document outlines planned features and improvements for future releases of 
   - [ ] Version history (git repos) scoped to active profile
   - [ ] Migration of shared history on first profile switch
 
+- [ ] **Multi-Select UX Discoverability**
+  Make it clearer in lists and tables where multi-selection is available.
+  - [ ] Subtle visual indicator or onboarding tooltip for multi-select (Ctrl+click, Shift+click, Ctrl+A)
+  - [ ] Applies to: DNS record table, Export zone list, Wizard template/domain selection
+  - [ ] Consider status bar hint, first-time tooltip, or selection count in header
+
 ---
 
 ## 💡 Ideas Under Consideration

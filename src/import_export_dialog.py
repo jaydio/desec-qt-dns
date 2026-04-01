@@ -113,9 +113,6 @@ class ExportInterface(QtWidgets.QWidget):
         left_lay.addLayout(title_row)
 
         # Zone list view with Ctrl/Shift multi-select (no checkboxes)
-        left_lay.addWidget(CaptionLabel(
-            "Ctrl+click \u2022 Shift+click \u2022 Ctrl+A"
-        ))
         self._zone_model = QtCore.QStringListModel(self.available_zones)
         self._zone_list = ListView()
         self._zone_list.setModel(self._zone_model)

@@ -1106,10 +1106,6 @@ class WizardInterface(QtWidgets.QWidget):
         splitter.setHandleWidth(1)
         splitter.setStyleSheet(SPLITTER_QSS)
 
-        preset_lay.addWidget(CaptionLabel(
-            "Ctrl+click to select multiple \u2022 Shift+click for range \u2022 Ctrl+A to select all"
-        ))
-
         self._template_list = ListWidget()
         self._template_list.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
@@ -1210,7 +1206,7 @@ class WizardInterface(QtWidgets.QWidget):
         glay = QtWidgets.QVBoxLayout(group)
         glay.setSpacing(6)
         glay.addWidget(CaptionLabel(
-            "Ctrl+click to select multiple \u2022 Shift+click for range \u2022 Ctrl+A to select all"
+            "Records will be created on all selected domains."
         ))
 
         # Search filter
