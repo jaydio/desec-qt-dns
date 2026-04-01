@@ -751,11 +751,145 @@ class WizardInterface(QtWidgets.QWidget):
         return records
 
     # ------------------------------------------------------------------
-    # Execution placeholder
+    # Execution
     # ------------------------------------------------------------------
 
     def _execute(self):
-        pass
+        """Enqueue all actionable preview rows to the API queue."""
+        if not self._api_queue:
+            InfoBar.error(
+                title="No API Queue",
+                content="Cannot execute — API queue is not available.",
+                parent=self.window(), duration=5000,
+                position=InfoBarPosition.TOP,
+            )
+            return
+
+        actionable = [
+            row for row in self._preview_rows
+            if row["status"] in ("new", "conflict") and not row["error"]
+        ]
+
+        self._exec_table.setRowCount(len(actionable))
+        self._exec_progress.setRange(0, len(actionable))
+        self._exec_progress.setValue(0)
+        self._exec_completed = 0
+        self._exec_succeeded = 0
+        self._exec_failed = 0
+        self._exec_total = len(actionable)
+        self._exec_actionable = actionable
+        self._exec_results = {}
+
+        for i, row in enumerate(actionable):
+            self._exec_table.setItem(i, 0, QtWidgets.QTableWidgetItem(row["domain"]))
+            self._exec_table.setItem(i, 1, QtWidgets.QTableWidgetItem(row["subname"] or "@"))
+            self._exec_table.setItem(i, 2, QtWidgets.QTableWidgetItem(row["type"]))
+            self._exec_table.setItem(i, 3, QtWidgets.QTableWidgetItem(row["content"]))
+            self._exec_table.setItem(i, 4, QtWidgets.QTableWidgetItem("Pending..."))
+
+            self._enqueue_record(i, row)
+
+        self._exec_summary.setText(
+            f"Executing {len(actionable)} operations..."
+        )
+
+    def _enqueue_record(self, row_idx, row):
+        """Enqueue a single record operation."""
+        domain = row["domain"]
+        subname = row["subname"]
+        rtype = row["type"]
+        ttl = row["ttl"]
+        content = row["content"]
+
+        if row["status"] == "conflict" and self._conflict_strategy == "merge":
+            existing = list(row.get("existing_records", []))
+            if content not in existing:
+                existing.append(content)
+            api_method = self._api.update_record
+            records = existing
+            action_desc = f"Merge {rtype} for {subname or '@'} in {domain}"
+        elif row["status"] == "conflict" and self._conflict_strategy == "replace":
+            api_method = self._api.update_record
+            records = [content]
+            action_desc = f"Replace {rtype} for {subname or '@'} in {domain}"
+        else:
+            api_method = self._api.create_record
+            records = [content]
+            action_desc = f"Create {rtype} for {subname or '@'} in {domain}"
+
+        def _on_done(success, response, idx=row_idx, d=domain):
+            self._on_exec_item_done(idx, d, success, response)
+
+        item = QueueItem(
+            priority=PRIORITY_NORMAL,
+            category="wizard",
+            action=action_desc,
+            callable=api_method,
+            args=(domain, subname, rtype, ttl, records),
+            callback=_on_done,
+        )
+        self._api_queue.enqueue(item)
+
+    def _on_exec_item_done(self, row_idx, domain, success, response):
+        """Callback for each completed queue item."""
+        self._exec_completed += 1
+        self._exec_progress.setValue(self._exec_completed)
+
+        result_item = self._exec_table.item(row_idx, 4)
+        if success:
+            self._exec_succeeded += 1
+            self._exec_results[row_idx] = (True, "")
+            if result_item:
+                result_item.setText("Success")
+                result_item.setForeground(QtGui.QColor("#43A047"))
+            if self._version_manager:
+                try:
+                    self._version_manager.snapshot(domain)
+                except Exception:
+                    pass
+        else:
+            self._exec_failed += 1
+            err = str(response) if response else "Unknown error"
+            self._exec_results[row_idx] = (False, err)
+            if result_item:
+                result_item.setText(f"Failed: {err}")
+                result_item.setForeground(QtGui.QColor("#E53935"))
+
+        self._exec_status_label.setText(
+            f"{self._exec_completed}/{self._exec_total} complete — "
+            f"{self._exec_succeeded} succeeded, {self._exec_failed} failed"
+        )
+
+        if self._exec_completed >= self._exec_total:
+            self._exec_summary.setText(
+                f"Complete: {self._exec_succeeded}/{self._exec_total} succeeded"
+                + (f", {self._exec_failed} failed" if self._exec_failed else "")
+            )
+            if self._exec_failed > 0:
+                self._btn_retry.setVisible(True)
+            self.records_changed.emit()
+            self.log_message.emit(
+                f"Wizard: {self._exec_succeeded}/{self._exec_total} records created",
+                "info" if self._exec_failed == 0 else "warning",
+            )
+
+    def _retry_failed(self):
+        """Re-enqueue only the failed items."""
+        self._btn_retry.setVisible(False)
+        failed_indices = [
+            idx for idx, (ok, _) in self._exec_results.items() if not ok
+        ]
+        self._exec_completed = self._exec_total - len(failed_indices)
+        self._exec_failed = 0
+        self._exec_progress.setValue(self._exec_completed)
+
+        for idx in failed_indices:
+            row = self._exec_actionable[idx]
+            result_item = self._exec_table.item(idx, 4)
+            if result_item:
+                result_item.setText("Retrying...")
+                result_item.setForeground(QtGui.QColor("#FB8C00"))
+            self._enqueue_record(idx, row)
 
     # ------------------------------------------------------------------
     # Step builder placeholders
@@ -1052,9 +1186,40 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _build_step_execute(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addWidget(CaptionLabel("Step placeholder: Execution"))
-        layout.addStretch()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+
+        lay.addWidget(StrongBodyLabel("Execution"))
+        self._exec_summary = CaptionLabel("Preparing...")
+        lay.addWidget(self._exec_summary)
+
+        self._exec_progress = ProgressBar()
+        lay.addWidget(self._exec_progress)
+
+        self._exec_status_label = CaptionLabel("")
+        lay.addWidget(self._exec_status_label)
+
+        self._exec_table = TableWidget()
+        self._exec_table.setColumnCount(5)
+        self._exec_table.setHorizontalHeaderLabels(
+            ["Domain", "Subdomain", "Type", "Content", "Result"]
+        )
+        self._exec_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._exec_table.horizontalHeader().setStretchLastSection(True)
+        lay.addWidget(self._exec_table, 1)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addStretch()
+        self._btn_retry = PushButton("Retry Failed")
+        self._btn_retry.clicked.connect(self._retry_failed)
+        self._btn_retry.setVisible(False)
+        btn_row.addWidget(self._btn_retry)
+        lay.addLayout(btn_row)
+
         return w
 
     # ------------------------------------------------------------------
