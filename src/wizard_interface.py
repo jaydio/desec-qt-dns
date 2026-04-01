@@ -31,6 +31,7 @@ from qfluentwidgets import (
 from fluent_styles import container_qss
 from record_widget import _validate_record_content
 from api_queue import QueueItem, PRIORITY_NORMAL
+from wizard_templates import TEMPLATES, CATEGORIES
 
 log = logging.getLogger(__name__)
 
@@ -248,7 +249,11 @@ class WizardInterface(QtWidgets.QWidget):
     # ------------------------------------------------------------------
 
     def _on_enter_template_step(self):
-        pass
+        if self._mode == "preset":
+            self._template_stack.setCurrentIndex(0)
+            self._populate_template_list()
+        else:
+            self._template_stack.setCurrentIndex(1)
 
     def _on_enter_variables_step(self):
         pass
@@ -268,6 +273,98 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _validate_variables_step(self) -> bool:
         return True
+
+    # ------------------------------------------------------------------
+    # Template step helpers
+    # ------------------------------------------------------------------
+
+    def _populate_template_list(self):
+        self._template_list.clear()
+        self._template_search.clear()
+        for cat in CATEGORIES:
+            header_item = QtWidgets.QListWidgetItem(f"── {cat} ──")
+            header_item.setFlags(Qt.ItemFlag.NoItemFlags)
+            font = header_item.font()
+            font.setBold(True)
+            header_item.setFont(font)
+            self._template_list.addItem(header_item)
+
+            for tpl in TEMPLATES:
+                if tpl["category"] != cat:
+                    continue
+                item = QtWidgets.QListWidgetItem(
+                    f"  {tpl['name']}  ({len(tpl['records'])} records)"
+                )
+                item.setData(Qt.ItemDataRole.UserRole, tpl["id"])
+                self._template_list.addItem(item)
+
+    def _filter_templates(self, text):
+        ft = text.strip().lower()
+        for i in range(self._template_list.count()):
+            item = self._template_list.item(i)
+            tpl_id = item.data(Qt.ItemDataRole.UserRole)
+            if tpl_id is None:
+                item.setHidden(False)
+                continue
+            tpl = next((t for t in TEMPLATES if t["id"] == tpl_id), None)
+            if tpl and ft:
+                visible = (ft in tpl["name"].lower()
+                           or ft in tpl["description"].lower()
+                           or ft in tpl["category"].lower())
+            else:
+                visible = True
+            item.setHidden(not visible)
+
+        # Hide category headers with no visible children
+        last_header = None
+        last_header_has_children = False
+        for i in range(self._template_list.count()):
+            item = self._template_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) is None:
+                if last_header is not None:
+                    last_header.setHidden(not last_header_has_children)
+                last_header = item
+                last_header_has_children = False
+            elif not item.isHidden():
+                last_header_has_children = True
+        if last_header is not None:
+            last_header.setHidden(not last_header_has_children)
+
+    def _on_template_selected(self, current, _previous):
+        if current is None:
+            self._template = None
+            self._validate_current_step()
+            return
+        tpl_id = current.data(Qt.ItemDataRole.UserRole)
+        if tpl_id is None:
+            self._template = None
+            self._validate_current_step()
+            return
+        tpl = next((t for t in TEMPLATES if t["id"] == tpl_id), None)
+        self._template = tpl
+        if tpl:
+            self._template_name_label.setText(tpl["name"])
+            self._template_desc_label.setText(tpl["description"])
+            self._template_records_table.setRowCount(len(tpl["records"]))
+            for r, rec in enumerate(tpl["records"]):
+                self._template_records_table.setItem(
+                    r, 0, QtWidgets.QTableWidgetItem(rec["type"]))
+                self._template_records_table.setItem(
+                    r, 1, QtWidgets.QTableWidgetItem(rec["subname"] or "@"))
+                self._template_records_table.setItem(
+                    r, 2, QtWidgets.QTableWidgetItem(str(rec["ttl"])))
+                self._template_records_table.setItem(
+                    r, 3, QtWidgets.QTableWidgetItem(rec["content"]))
+        self._validate_current_step()
+
+    def _build_custom_builder(self):
+        """Custom record builder — placeholder, implemented in Task 6."""
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.addWidget(StrongBodyLabel("Custom Record Builder"))
+        lay.addWidget(CaptionLabel("Build your own record set — placeholder"))
+        lay.addStretch()
+        return w
 
     # ------------------------------------------------------------------
     # Execution placeholder
@@ -350,11 +447,63 @@ class WizardInterface(QtWidgets.QWidget):
         self._style_mode_card(self._card_custom, mode == "custom")
         self._validate_current_step()
 
-    def _build_step_template(self) -> QtWidgets.QWidget:
+    def _build_step_template(self):
         w = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addWidget(CaptionLabel("Step placeholder: Select Template"))
-        layout.addStretch()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+
+        lay.addWidget(StrongBodyLabel("Select a Template"))
+
+        self._template_search = SearchLineEdit()
+        self._template_search.setPlaceholderText("Search templates...")
+        self._template_search.textChanged.connect(self._filter_templates)
+        lay.addWidget(self._template_search)
+
+        # Split: template list left, preview right
+        splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(1)
+
+        # Template list
+        self._template_list = ListWidget()
+        self._template_list.currentItemChanged.connect(self._on_template_selected)
+        splitter.addWidget(self._template_list)
+
+        # Preview panel
+        preview_w = QtWidgets.QWidget()
+        self._template_preview_lay = QtWidgets.QVBoxLayout(preview_w)
+        self._template_preview_lay.setContentsMargins(8, 0, 0, 0)
+        self._template_preview_lay.setSpacing(6)
+
+        self._template_name_label = StrongBodyLabel("")
+        self._template_desc_label = CaptionLabel("")
+        self._template_desc_label.setWordWrap(True)
+        self._template_preview_lay.addWidget(self._template_name_label)
+        self._template_preview_lay.addWidget(self._template_desc_label)
+
+        self._template_records_table = TableWidget()
+        self._template_records_table.setColumnCount(4)
+        self._template_records_table.setHorizontalHeaderLabels(
+            ["Type", "Subdomain", "TTL", "Content"]
+        )
+        self._template_records_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._template_records_table.horizontalHeader().setStretchLastSection(True)
+        self._template_preview_lay.addWidget(self._template_records_table, 1)
+
+        splitter.addWidget(preview_w)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+
+        # Custom mode panel (stacked with the splitter)
+        self._custom_builder = self._build_custom_builder()
+
+        self._template_stack = QtWidgets.QStackedWidget()
+        self._template_stack.addWidget(splitter)
+        self._template_stack.addWidget(self._custom_builder)
+
+        lay.addWidget(self._template_stack, 1)
         return w
 
     def _build_step_variables(self) -> QtWidgets.QWidget:
