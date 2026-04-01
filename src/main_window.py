@@ -162,6 +162,10 @@ class DnsInterface(QtWidgets.QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
+        # ── Queue progress (controlled by RecordWidget) ─────────────────────
+        # Placed above the splitter so it spans the full width
+        outer.addWidget(record_widget._queue_progress_row)
+
         # ── Splitter ─────────────────────────────────────────────────────────
         splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         sp = splitter.sizePolicy()

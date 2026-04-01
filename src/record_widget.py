@@ -919,10 +919,10 @@ class RecordWidget(QtWidgets.QWidget):
         # Add header layout to main layout
         layout.addLayout(header_layout)
 
-        # Queue progress (hidden by default, shown during active operations)
+        # Queue progress (hidden by default, reparented to DnsInterface for full-width display)
         self._queue_progress_row = QtWidgets.QWidget()
         qp_lay = QtWidgets.QVBoxLayout(self._queue_progress_row)
-        qp_lay.setContentsMargins(0, 4, 0, 4)
+        qp_lay.setContentsMargins(6, 4, 6, 4)
         qp_lay.setSpacing(4)
         self._queue_summary = CaptionLabel("")
         qp_lay.addWidget(self._queue_summary)
@@ -931,7 +931,6 @@ class RecordWidget(QtWidgets.QWidget):
         self._queue_status = CaptionLabel("")
         qp_lay.addWidget(self._queue_status)
         self._queue_progress_row.setVisible(False)
-        layout.addWidget(self._queue_progress_row)
 
         self._pending_ops = 0
         self._completed_ops = 0
