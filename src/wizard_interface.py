@@ -112,8 +112,8 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _setup_ui(self):
         outer = QtWidgets.QVBoxLayout(self)
-        outer.setContentsMargins(16, 12, 16, 12)
-        outer.setSpacing(8)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(6)
 
         # ── Title row ──────────────────────────────────────────────────
         title_row = QtWidgets.QHBoxLayout()
@@ -666,10 +666,12 @@ class WizardInterface(QtWidgets.QWidget):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
+        lay.setSpacing(6)
 
-        lay.addWidget(StrongBodyLabel("Build Custom Record Set"))
-        lay.addWidget(CaptionLabel(
+        group = QtWidgets.QGroupBox("Custom Record Set")
+        glay = QtWidgets.QVBoxLayout(group)
+        glay.setSpacing(6)
+        glay.addWidget(CaptionLabel(
             "Add records below. Use {variable} placeholders in subdomain or "
             "content fields (e.g. {domain}, {ip_address}). Variables will be "
             "prompted in the next step."
@@ -686,22 +688,33 @@ class WizardInterface(QtWidgets.QWidget):
         toolbar.addStretch()
         self._custom_row_count = CaptionLabel("0 records")
         toolbar.addWidget(self._custom_row_count)
-        lay.addLayout(toolbar)
+        glay.addLayout(toolbar)
 
         self._custom_table = TableWidget()
         self._custom_table.setColumnCount(4)
         self._custom_table.setHorizontalHeaderLabels(
             ["Type", "Subdomain", "TTL", "Content"]
         )
+        self._custom_table.verticalHeader().setVisible(False)
         self._custom_table.horizontalHeader().setStretchLastSection(True)
+        self._custom_table.horizontalHeader().setSectionResizeMode(
+            0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._custom_table.horizontalHeader().setSectionResizeMode(
+            1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._custom_table.horizontalHeader().setSectionResizeMode(
+            2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        )
         self._custom_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
         )
         self._custom_table.cellChanged.connect(
             lambda: self._validate_current_step()
         )
-        lay.addWidget(self._custom_table, 1)
+        glay.addWidget(self._custom_table, 1)
 
+        lay.addWidget(group, 1)
         return w
 
     def _custom_add_row(self):
@@ -928,11 +941,13 @@ class WizardInterface(QtWidgets.QWidget):
     def _build_step_mode(self):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
-        lay.setContentsMargins(0, 8, 0, 0)
-        lay.setSpacing(16)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
 
-        lay.addWidget(StrongBodyLabel("What would you like to do?"))
-        lay.addWidget(CaptionLabel(
+        group = QtWidgets.QGroupBox("Choose Mode")
+        glay = QtWidgets.QVBoxLayout(group)
+        glay.setSpacing(12)
+        glay.addWidget(CaptionLabel(
             "Choose a preset for common services, or create a custom record set."
         ))
 
@@ -943,7 +958,7 @@ class WizardInterface(QtWidgets.QWidget):
             "DNS records with guided variable input.",
         )
         self._card_preset.mousePressEvent = lambda e: self._select_mode("preset")
-        lay.addWidget(self._card_preset)
+        glay.addWidget(self._card_preset)
 
         self._card_custom = self._make_mode_card(
             "Custom",
@@ -952,8 +967,9 @@ class WizardInterface(QtWidgets.QWidget):
             "placeholders for dynamic values.",
         )
         self._card_custom.mousePressEvent = lambda e: self._select_mode("custom")
-        lay.addWidget(self._card_custom)
+        glay.addWidget(self._card_custom)
 
+        lay.addWidget(group)
         lay.addStretch()
         return w
 
@@ -998,10 +1014,8 @@ class WizardInterface(QtWidgets.QWidget):
     def _build_step_template(self):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
-        lay.setContentsMargins(0, 8, 0, 0)
-        lay.setSpacing(8)
-
-        lay.addWidget(StrongBodyLabel("Select a Template"))
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
 
         self._template_search = SearchLineEdit()
         self._template_search.setPlaceholderText("Search templates...")
@@ -1037,6 +1051,12 @@ class WizardInterface(QtWidgets.QWidget):
         self._template_records_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
+        self._template_records_table.verticalHeader().setVisible(False)
+        self._template_records_table.setAlternatingRowColors(True)
+        for col in (0, 1, 2):
+            self._template_records_table.horizontalHeader().setSectionResizeMode(
+                col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+            )
         self._template_records_table.horizontalHeader().setStretchLastSection(True)
         self._template_preview_lay.addWidget(self._template_records_table, 1)
 
@@ -1057,16 +1077,19 @@ class WizardInterface(QtWidgets.QWidget):
     def _build_step_variables(self):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
-        lay.setContentsMargins(0, 8, 0, 0)
-        lay.setSpacing(8)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
 
-        lay.addWidget(StrongBodyLabel("Fill In Variables"))
+        group = QtWidgets.QGroupBox("Variables")
+        glay = QtWidgets.QVBoxLayout(group)
+        glay.setSpacing(6)
+
         self._var_desc = CaptionLabel(
             "Provide values for the template variables below. "
             "{domain} is automatically set per target domain."
         )
         self._var_desc.setWordWrap(True)
-        lay.addWidget(self._var_desc)
+        glay.addWidget(self._var_desc)
 
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1079,23 +1102,26 @@ class WizardInterface(QtWidgets.QWidget):
         self._var_form_widget = QtWidgets.QWidget()
         self._var_form_layout = QtWidgets.QFormLayout(self._var_form_widget)
         self._var_form_layout.setContentsMargins(0, 0, 0, 0)
-        self._var_form_layout.setSpacing(12)
+        self._var_form_layout.setSpacing(10)
 
         scroll.setWidget(self._var_form_widget)
-        lay.addWidget(scroll, 1)
+        glay.addWidget(scroll, 1)
 
         self._var_inputs = {}
 
+        lay.addWidget(group, 1)
         return w
 
     def _build_step_domains(self):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
-        lay.setContentsMargins(0, 8, 0, 0)
-        lay.setSpacing(8)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
 
-        lay.addWidget(StrongBodyLabel("Select Target Domains"))
-        lay.addWidget(CaptionLabel(
+        group = QtWidgets.QGroupBox("Target Domains")
+        glay = QtWidgets.QVBoxLayout(group)
+        glay.setSpacing(6)
+        glay.addWidget(CaptionLabel(
             "Records will be created on all selected domains."
         ))
 
@@ -1115,10 +1141,10 @@ class WizardInterface(QtWidgets.QWidget):
         btn_none.clicked.connect(lambda: self._set_all_domains(False))
         toolbar.addWidget(btn_none)
 
-        lay.addLayout(toolbar)
+        glay.addLayout(toolbar)
 
         self._domain_count_label = CaptionLabel("0 of 0 domains selected")
-        lay.addWidget(self._domain_count_label)
+        glay.addWidget(self._domain_count_label)
 
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1133,19 +1159,22 @@ class WizardInterface(QtWidgets.QWidget):
         self._domain_check_layout.setSpacing(4)
         self._domain_check_layout.addStretch()
         scroll.setWidget(self._domain_check_widget)
-        lay.addWidget(scroll, 1)
+        glay.addWidget(scroll, 1)
 
         self._domain_checkboxes = []
+        lay.addWidget(group, 1)
         return w
 
     def _build_step_conflict(self):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
-        lay.setContentsMargins(0, 8, 0, 0)
-        lay.setSpacing(12)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
 
-        lay.addWidget(StrongBodyLabel("Conflict Strategy"))
-        lay.addWidget(CaptionLabel(
+        group = QtWidgets.QGroupBox("Conflict Strategy")
+        glay = QtWidgets.QVBoxLayout(group)
+        glay.setSpacing(8)
+        glay.addWidget(CaptionLabel(
             "Choose how to handle cases where a record with the same "
             "subdomain and type already exists on a target domain."
         ))
@@ -1156,8 +1185,8 @@ class WizardInterface(QtWidgets.QWidget):
         r_merge.setChecked(True)
         self._conflict_strategy = "merge"
         r_merge.toggled.connect(lambda checked: self._set_conflict("merge") if checked else None)
-        lay.addWidget(r_merge)
-        lay.addWidget(CaptionLabel(
+        glay.addWidget(r_merge)
+        glay.addWidget(CaptionLabel(
             "  Append new content to the existing record set. "
             "For example, adds a new MX record alongside existing ones."
         ))
@@ -1165,8 +1194,8 @@ class WizardInterface(QtWidgets.QWidget):
 
         r_replace = RadioButton("Replace")
         r_replace.toggled.connect(lambda checked: self._set_conflict("replace") if checked else None)
-        lay.addWidget(r_replace)
-        lay.addWidget(CaptionLabel(
+        glay.addWidget(r_replace)
+        glay.addWidget(CaptionLabel(
             "  Overwrite the existing record set entirely with the new content. "
             "Use with caution — existing records of the same type will be lost."
         ))
@@ -1174,13 +1203,14 @@ class WizardInterface(QtWidgets.QWidget):
 
         r_skip = RadioButton("Skip")
         r_skip.toggled.connect(lambda checked: self._set_conflict("skip") if checked else None)
-        lay.addWidget(r_skip)
-        lay.addWidget(CaptionLabel(
+        glay.addWidget(r_skip)
+        glay.addWidget(CaptionLabel(
             "  Leave existing records untouched. Only create records where "
             "no matching subdomain + type combination exists yet."
         ))
         self._conflict_radios["skip"] = r_skip
 
+        lay.addWidget(group)
         lay.addStretch()
         return w
 
@@ -1190,56 +1220,82 @@ class WizardInterface(QtWidgets.QWidget):
     def _build_step_preview(self):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
-        lay.setContentsMargins(0, 8, 0, 0)
-        lay.setSpacing(8)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
 
-        lay.addWidget(StrongBodyLabel("Preview"))
+        group = QtWidgets.QGroupBox("Preview")
+        glay = QtWidgets.QVBoxLayout(group)
+        glay.setSpacing(6)
+
         self._preview_summary = CaptionLabel("")
         self._preview_summary.setWordWrap(True)
-        lay.addWidget(self._preview_summary)
+        glay.addWidget(self._preview_summary)
 
         self._preview_table = TableWidget()
         self._preview_table.setColumnCount(6)
         self._preview_table.setHorizontalHeaderLabels(
             ["Domain", "Subdomain", "Type", "TTL", "Content", "Status"]
         )
+        self._preview_table.verticalHeader().setVisible(False)
         self._preview_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
-        self._preview_table.horizontalHeader().setStretchLastSection(True)
+        self._preview_table.setAlternatingRowColors(True)
+        for col in (0, 1, 2, 3, 5):
+            self._preview_table.horizontalHeader().setSectionResizeMode(
+                col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+            )
+        self._preview_table.horizontalHeader().setSectionResizeMode(
+            4, QtWidgets.QHeaderView.ResizeMode.Stretch
+        )
         self._preview_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
         )
-        lay.addWidget(self._preview_table, 1)
+        glay.addWidget(self._preview_table, 1)
 
+        lay.addWidget(group, 1)
         return w
 
     def _build_step_execute(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
-        lay.setContentsMargins(0, 8, 0, 0)
-        lay.setSpacing(8)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
 
-        lay.addWidget(StrongBodyLabel("Execution"))
+        group = QtWidgets.QGroupBox("Execution")
+        glay = QtWidgets.QVBoxLayout(group)
+        glay.setSpacing(6)
+
         self._exec_summary = CaptionLabel("Preparing...")
-        lay.addWidget(self._exec_summary)
+        glay.addWidget(self._exec_summary)
 
         self._exec_progress = ProgressBar()
-        lay.addWidget(self._exec_progress)
+        glay.addWidget(self._exec_progress)
 
         self._exec_status_label = CaptionLabel("")
-        lay.addWidget(self._exec_status_label)
+        glay.addWidget(self._exec_status_label)
 
         self._exec_table = TableWidget()
         self._exec_table.setColumnCount(5)
         self._exec_table.setHorizontalHeaderLabels(
             ["Domain", "Subdomain", "Type", "Content", "Result"]
         )
+        self._exec_table.verticalHeader().setVisible(False)
         self._exec_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
-        self._exec_table.horizontalHeader().setStretchLastSection(True)
-        lay.addWidget(self._exec_table, 1)
+        self._exec_table.setAlternatingRowColors(True)
+        for col in (0, 1, 2):
+            self._exec_table.horizontalHeader().setSectionResizeMode(
+                col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+            )
+        self._exec_table.horizontalHeader().setSectionResizeMode(
+            3, QtWidgets.QHeaderView.ResizeMode.Stretch
+        )
+        self._exec_table.horizontalHeader().setSectionResizeMode(
+            4, QtWidgets.QHeaderView.ResizeMode.Stretch
+        )
+        glay.addWidget(self._exec_table, 1)
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setSpacing(8)
@@ -1248,8 +1304,9 @@ class WizardInterface(QtWidgets.QWidget):
         self._btn_retry.clicked.connect(self._retry_failed)
         self._btn_retry.setVisible(False)
         btn_row.addWidget(self._btn_retry)
-        lay.addLayout(btn_row)
+        glay.addLayout(btn_row)
 
+        lay.addWidget(group, 1)
         return w
 
     # ------------------------------------------------------------------
