@@ -648,13 +648,8 @@ class WizardInterface(QtWidgets.QWidget):
                 if tpl["category"] != cat:
                     continue
                 item = QtWidgets.QListWidgetItem(
-                    f"{tpl['name']}  ({len(tpl['records'])} records)"
+                    f"  {tpl['name']}  ({len(tpl['records'])} records)"
                 )
-                item.setFlags(
-                    Qt.ItemFlag.ItemIsEnabled
-                    | Qt.ItemFlag.ItemIsUserCheckable
-                )
-                item.setCheckState(Qt.CheckState.Unchecked)
                 item.setData(Qt.ItemDataRole.UserRole, tpl["id"])
                 self._template_list.addItem(item)
         self._template_list.blockSignals(False)
@@ -691,18 +686,16 @@ class WizardInterface(QtWidgets.QWidget):
         if last_header is not None:
             last_header.setHidden(not last_header_has_children)
 
-    def _on_template_checked(self, item):
-        """Respond to checkbox toggle on a template list item."""
+    def _on_template_selection_changed(self):
+        """Respond to selection change in the template list."""
         selected = []
-        for i in range(self._template_list.count()):
-            it = self._template_list.item(i)
-            tpl_id = it.data(Qt.ItemDataRole.UserRole)
+        for item in self._template_list.selectedItems():
+            tpl_id = item.data(Qt.ItemDataRole.UserRole)
             if tpl_id is None:
                 continue
-            if it.checkState() == Qt.CheckState.Checked:
-                tpl = next((t for t in TEMPLATES if t["id"] == tpl_id), None)
-                if tpl:
-                    selected.append(tpl)
+            tpl = next((t for t in TEMPLATES if t["id"] == tpl_id), None)
+            if tpl:
+                selected.append(tpl)
         self._templates = selected
 
         # Preview: combined records from all checked templates
@@ -1115,7 +1108,10 @@ class WizardInterface(QtWidgets.QWidget):
 
         # Template list — checkboxes for multi-select (click to toggle)
         self._template_list = ListWidget()
-        self._template_list.itemChanged.connect(self._on_template_checked)
+        self._template_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self._template_list.itemSelectionChanged.connect(self._on_template_selection_changed)
         splitter.addWidget(self._template_list)
 
         # Preview panel
