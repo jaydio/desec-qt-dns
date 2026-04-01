@@ -1212,6 +1212,10 @@ class MainWindow(FluentWindow):
     # ── Keyboard events ──────────────────────────────────────────────────────
 
     def keyPressEvent(self, event):
+        # Consume Enter/Return to prevent FluentWindow from hiding
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            event.accept()
+            return
         if event.key() == Qt.Key.Key_F5:
             self.sync_data()
             event.accept()

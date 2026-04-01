@@ -23,7 +23,7 @@ from PySide6.QtCore import Qt, Signal
 
 from qfluentwidgets import (
     PushButton, PrimaryPushButton, SearchLineEdit, LineEdit,
-    ComboBox, CheckBox, RadioButton, ListWidget, TableWidget,
+    ComboBox, CheckBox, RadioButton, ListWidget, ListView, TableWidget,
     StrongBodyLabel, CaptionLabel, ProgressBar,
     isDarkTheme, InfoBar, InfoBarPosition,
 )
@@ -374,48 +374,51 @@ class WizardInterface(QtWidgets.QWidget):
         self._validate_current_step()
 
     def _on_enter_domains_step(self):
-        """Rebuild the checkbox list from cached zones."""
-        while self._domain_check_layout.count() > 1:
-            item = self._domain_check_layout.takeAt(0)
-            if w := item.widget():
-                w.deleteLater()
-        self._domain_checkboxes.clear()
+        """Populate the domain list from cached zones."""
         self._selected_domains = []
-
         cached, _ = self._cache.get_cached_zones()
-        zones = sorted(z.get("name", "") for z in (cached or []))
-
-        for name in zones:
-            cb = CheckBox(name)
-            cb.stateChanged.connect(self._on_domain_check_changed)
-            self._domain_check_layout.insertWidget(
-                self._domain_check_layout.count() - 1, cb
-            )
-            self._domain_checkboxes.append((name, cb))
-
+        self._all_domain_names = sorted(
+            z.get("name", "") for z in (cached or [])
+        )
+        self._domain_model.setStringList(self._all_domain_names)
+        self._domain_list.clearSelection()
+        self._domain_list.selectionModel().selectionChanged.connect(
+            self._on_domain_selection_changed
+        )
         self._domain_search.clear()
         self._update_domain_count()
 
-    def _filter_domain_checkboxes(self, text):
+    def _filter_domains(self, text):
         ft = text.strip().lower()
-        for name, cb in self._domain_checkboxes:
-            cb.setVisible(not ft or ft in name.lower())
+        if ft:
+            filtered = [n for n in self._all_domain_names if ft in n.lower()]
+        else:
+            filtered = self._all_domain_names
+        self._domain_model.setStringList(filtered)
 
-    def _set_all_domains(self, checked):
-        for name, cb in self._domain_checkboxes:
-            if cb.isVisible():
-                cb.setChecked(checked)
+    def _select_all_domains(self):
+        sel = self._domain_list.selectionModel()
+        model = self._domain_model
+        if model.rowCount() == 0:
+            return
+        sel.select(
+            QtCore.QItemSelection(model.index(0), model.index(model.rowCount() - 1)),
+            QtCore.QItemSelectionModel.SelectionFlag.Select,
+        )
 
-    def _on_domain_check_changed(self):
+    def _select_no_domains(self):
+        self._domain_list.clearSelection()
+
+    def _on_domain_selection_changed(self):
         self._selected_domains = [
-            name for name, cb in self._domain_checkboxes if cb.isChecked()
+            idx.data() for idx in self._domain_list.selectedIndexes()
         ]
         self._update_domain_count()
         self._validate_current_step()
 
     def _update_domain_count(self):
-        total = len(self._domain_checkboxes)
-        selected = len([1 for _, cb in self._domain_checkboxes if cb.isChecked()])
+        total = len(self._all_domain_names)
+        selected = len(self._domain_list.selectedIndexes())
         self._domain_count_label.setText(
             f"{selected} of {total} domain{'s' if total != 1 else ''} selected"
         )
@@ -1213,46 +1216,46 @@ class WizardInterface(QtWidgets.QWidget):
         glay = QtWidgets.QVBoxLayout(group)
         glay.setSpacing(6)
         glay.addWidget(CaptionLabel(
-            "Records will be created on all selected domains."
+            "Ctrl+click to select multiple. Shift+click for range."
         ))
 
-        toolbar = QtWidgets.QHBoxLayout()
-        toolbar.setSpacing(8)
-
+        # Search filter
         self._domain_search = SearchLineEdit()
         self._domain_search.setPlaceholderText("Filter domains...")
-        self._domain_search.textChanged.connect(self._filter_domain_checkboxes)
-        toolbar.addWidget(self._domain_search, 1)
-
-        btn_all = PushButton("Select All")
-        btn_all.clicked.connect(lambda: self._set_all_domains(True))
-        toolbar.addWidget(btn_all)
-
-        btn_none = PushButton("Deselect All")
-        btn_none.clicked.connect(lambda: self._set_all_domains(False))
-        toolbar.addWidget(btn_none)
-
-        glay.addLayout(toolbar)
+        self._domain_search.textChanged.connect(self._filter_domains)
+        glay.addWidget(self._domain_search)
 
         self._domain_count_label = CaptionLabel("0 of 0 domains selected")
         glay.addWidget(self._domain_count_label)
 
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        # ListView with ExtendedSelection (Ctrl+click / Shift+click)
+        self._domain_model = QtCore.QStringListModel()
+        self._domain_list = ListView()
+        self._domain_list.setModel(self._domain_model)
+        self._domain_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
-        self._domain_check_widget = QtWidgets.QWidget()
-        self._domain_check_layout = QtWidgets.QVBoxLayout(self._domain_check_widget)
-        self._domain_check_layout.setContentsMargins(0, 0, 0, 0)
-        self._domain_check_layout.setSpacing(4)
-        self._domain_check_layout.addStretch()
-        scroll.setWidget(self._domain_check_widget)
-        glay.addWidget(scroll, 1)
+        self._domain_list.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._domain_list.setAlternatingRowColors(True)
+        glay.addWidget(self._domain_list, 1)
 
-        self._domain_checkboxes = []
+        # Select All / Select None buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_all = PushButton("Select All")
+        btn_all.clicked.connect(self._select_all_domains)
+        btn_row.addWidget(btn_all)
+        btn_none = PushButton("Select None")
+        btn_none.clicked.connect(self._select_no_domains)
+        btn_row.addWidget(btn_none)
+        btn_row.addStretch()
+        glay.addLayout(btn_row)
+
+        # Store all zones for filtering
+        self._all_domain_names = []
+
         lay.addWidget(group, 1)
         return w
 

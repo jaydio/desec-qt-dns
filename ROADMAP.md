@@ -125,6 +125,19 @@ This document outlines planned features and improvements for future releases of 
   - [ ] Auto-encode to in-addr.arpa / ip6.arpa zone names
   - [ ] Batch zone creation via APIQueue
 
+- [ ] **Keyboard Shortcuts / Hotkeys**
+  Configurable keyboard shortcuts for common actions.
+  - [ ] Shortcut reference dialog / cheat sheet
+  - [ ] Customizable keybindings
+  - [ ] Navigation shortcuts (switch between sidebar pages)
+  - [ ] Action shortcuts (sync, search, create record, etc.)
+
+- [ ] **Per-Profile Queue & History**
+  Isolate queue entries and version history per profile (currently shared).
+  - [ ] Queue history stored under profile directory
+  - [ ] Version history (git repos) scoped to active profile
+  - [ ] Migration of shared history on first profile switch
+
 ---
 
 ## 💡 Ideas Under Consideration
