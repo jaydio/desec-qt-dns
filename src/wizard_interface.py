@@ -271,7 +271,86 @@ class WizardInterface(QtWidgets.QWidget):
             self._template_stack.setCurrentIndex(1)
 
     def _on_enter_variables_step(self):
-        pass
+        """Rebuild the variable form based on the current template/custom records."""
+        while self._var_form_layout.rowCount() > 0:
+            self._var_form_layout.removeRow(0)
+        self._var_inputs.clear()
+
+        if self._mode == "preset" and self._template:
+            tpl_vars = self._template.get("variables", {})
+            records = self._template.get("records", [])
+        else:
+            tpl_vars = {}
+            records = self._custom_records
+
+        found_vars = set()
+        for rec in records:
+            for field in ("subname", "content"):
+                found_vars.update(re.findall(r'\{(\w+)\}', rec.get(field, "")))
+
+        found_vars.discard("domain")
+        found_vars.discard("subdomain_prefix")
+
+        # Always show {domain} as read-only
+        domain_label = CaptionLabel("{domain} — auto-populated per selected domain")
+        self._var_form_layout.addRow(StrongBodyLabel("{domain}"), domain_label)
+
+        # Always show subdomain prefix
+        prefix_edit = LineEdit()
+        prefix_edit.setPlaceholderText("Optional — e.g. 'staging'")
+        prefix_edit.textChanged.connect(lambda: self._validate_current_step())
+        self._var_inputs["subdomain_prefix"] = prefix_edit
+        prefix_label = QtWidgets.QWidget()
+        prefix_lay = QtWidgets.QVBoxLayout(prefix_label)
+        prefix_lay.setContentsMargins(0, 0, 0, 0)
+        prefix_lay.setSpacing(2)
+        prefix_lay.addWidget(prefix_edit)
+        prefix_lay.addWidget(CaptionLabel(
+            "If set, prepended to all subnames (e.g. _dmarc → _dmarc.staging)"
+        ))
+        self._var_form_layout.addRow(
+            StrongBodyLabel("{subdomain_prefix}"), prefix_label
+        )
+
+        # Template-defined variables
+        for var_name in sorted(found_vars):
+            meta = tpl_vars.get(var_name, {})
+            edit = LineEdit()
+            edit.setPlaceholderText(meta.get("hint", f"Value for {{{var_name}}}"))
+            default = meta.get("default", "")
+            if default:
+                edit.setText(default)
+            edit.textChanged.connect(lambda: self._validate_current_step())
+            self._var_inputs[var_name] = edit
+
+            label_text = meta.get("label", f"{{{var_name}}}")
+            required = meta.get("required", True)
+
+            field_widget = QtWidgets.QWidget()
+            field_lay = QtWidgets.QVBoxLayout(field_widget)
+            field_lay.setContentsMargins(0, 0, 0, 0)
+            field_lay.setSpacing(2)
+            field_lay.addWidget(edit)
+            if meta.get("hint"):
+                field_lay.addWidget(CaptionLabel(meta["hint"]))
+            if required:
+                field_lay.addWidget(CaptionLabel("Required"))
+
+            row_label = StrongBodyLabel(label_text)
+            self._var_form_layout.addRow(row_label, field_widget)
+
+        if not found_vars:
+            self._var_desc.setText(
+                "This template has no custom variables. "
+                "You can optionally set a subdomain prefix below."
+            )
+        else:
+            self._var_desc.setText(
+                "Provide values for the template variables below. "
+                "{domain} is automatically set per target domain."
+            )
+
+        self._validate_current_step()
 
     def _on_enter_domains_step(self):
         pass
@@ -292,7 +371,27 @@ class WizardInterface(QtWidgets.QWidget):
             return len(records) > 0
 
     def _validate_variables_step(self) -> bool:
+        """Check all required variables have values."""
+        if self._mode == "preset" and self._template:
+            tpl_vars = self._template.get("variables", {})
+        else:
+            tpl_vars = {}
+
+        for var_name, edit in self._var_inputs.items():
+            if var_name == "subdomain_prefix":
+                continue
+            meta = tpl_vars.get(var_name, {})
+            required = meta.get("required", True)
+            if required and not edit.text().strip():
+                return False
         return True
+
+    def _collect_variables(self):
+        """Read all variable values from the form."""
+        result = {}
+        for var_name, edit in self._var_inputs.items():
+            result[var_name] = edit.text().strip()
+        return result
 
     # ------------------------------------------------------------------
     # Template step helpers
@@ -628,11 +727,38 @@ class WizardInterface(QtWidgets.QWidget):
         lay.addWidget(self._template_stack, 1)
         return w
 
-    def _build_step_variables(self) -> QtWidgets.QWidget:
+    def _build_step_variables(self):
         w = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addWidget(CaptionLabel("Step placeholder: Fill In Variables"))
-        layout.addStretch()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+
+        lay.addWidget(StrongBodyLabel("Fill In Variables"))
+        self._var_desc = CaptionLabel(
+            "Provide values for the template variables below. "
+            "{domain} is automatically set per target domain."
+        )
+        self._var_desc.setWordWrap(True)
+        lay.addWidget(self._var_desc)
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+
+        self._var_form_widget = QtWidgets.QWidget()
+        self._var_form_layout = QtWidgets.QFormLayout(self._var_form_widget)
+        self._var_form_layout.setContentsMargins(0, 0, 0, 0)
+        self._var_form_layout.setSpacing(12)
+
+        scroll.setWidget(self._var_form_widget)
+        lay.addWidget(scroll, 1)
+
+        self._var_inputs = {}
+
         return w
 
     def _build_step_domains(self) -> QtWidgets.QWidget:
