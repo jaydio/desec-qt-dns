@@ -5,6 +5,39 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0-beta] - 2026-04-02
+
+### Added in 1.2.0-beta
+
+- **DNS Record Wizard** (`wizard_interface.py`) — new 7-step guided wizard for creating DNS records across multiple domains
+  - **Preset mode**: 70 curated templates across 18 categories (Google, Microsoft 365, Proton, Fastmail, Zoho, Tutanota, Infomaniak, Mailfence, Brevo, Mailgun, SendGrid, Amazon SES, Postmark, Shopify, Squarespace, GitHub Pages, Netlify, Vercel, Cloudflare, Matrix, XMPP, ACME DNS-01, and 13 DNS providers including deSEC, Hetzner, Linode, Namecheap, Dynadot, and more)
+  - **Custom mode**: build arbitrary record sets with Type/Name/TTL/Content columns and `{variable}` placeholder support
+  - **Multi-template selection**: Ctrl+click to combine multiple presets in a single run
+  - **Variable input mask**: auto-discovered `{variables}` from templates with hints, defaults, and required/optional validation; table layout with Variable/Value/Hint columns
+  - **Multi-domain selection**: ListView with Ctrl+click/Shift+click matching Export page pattern, search filter, Select All/None
+  - **Conflict strategy**: Merge (append to existing RRset), Replace (overwrite), or Skip per run
+  - **RRset grouping**: records sharing the same (subname, type) are automatically bundled into a single API call per the deSEC API's atomic RRset model
+  - **Preview with conflict detection**: read-only table showing all resolved operations with color-coded status (New/Conflict/Skipped/Error) and summary counts
+  - **Execution via APIQueue**: real-time progress bar, per-row success/failure results, Retry Failed button
+  - **Post-execution snapshots**: fetches fresh records from API after completion for accurate version history
+  - Real-time validation of custom records using existing `_validate_record_content`
+  - Variable values preserved across Back/Forward navigation
+- **DNSSEC migration warning** (`dnssec_interface.py`) — collapsible amber warning card on the DNSSEC page about safely moving domains that had DNSSEC enabled, with multi-signer (RFC 8901) and "go insecure" approaches
+- **DNS record view progress bar** — shows operation count and progress when record create/update/delete operations are queued, positioned above the splitter spanning full width; auto-hides 3 seconds after completion
+
+### Fixed in 1.2.0-beta
+
+- **Version restore now fully restores** — restore previously only added/updated records from the snapshot (additive PUT) without deleting records absent from the target version; now includes empty-record entries to delete extra RRsets, correctly restoring to the exact historical state; apex NS records are preserved (deSEC-managed) while delegated subdomain NS records are properly restored
+- **Enter key no longer hides the window** — Enter/Return key events were propagating to FluentWindow and triggering a hide; now consumed at the main window level only when no child widget has focus, preserving Enter functionality in LineEdit fields and buttons
+- **Validate DNSSEC button removed from DNS zone list** — duplicate of the Verisign Debugger / DNSViz buttons already on the DNSSEC sidebar page
+- **Column naming consistency** — wizard tables use "Name" instead of "Subdomain" to match the DNS record view
+- **Minimum TTL enforced at 3600s** — removed sub-3600 TTL options from the wizard custom builder since deSEC requires minimum 3600s by default
+
+### Changed in 1.2.0-beta
+
+- **Wizard UI** follows the same QGroupBox + margin pattern as Search & Replace for visual consistency
+- **ROADMAP updated** with planned features: reverse DNS zone creation, subdomain delegation, SPF record builder/flattening, keyboard shortcuts, per-profile queue/history, multi-select UX discoverability
+
 ## [1.1.0-beta] - 2026-03-28
 
 ### Added in 1.1.0-beta
