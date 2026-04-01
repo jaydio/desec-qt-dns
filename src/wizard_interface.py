@@ -283,13 +283,11 @@ class WizardInterface(QtWidgets.QWidget):
             self._template_stack.setCurrentIndex(1)
 
     def _on_enter_variables_step(self):
-        """Rebuild the variable form based on the current template/custom records."""
-        while self._var_form_layout.rowCount() > 0:
-            self._var_form_layout.removeRow(0)
+        """Rebuild the variable table based on the current template/custom records."""
         self._var_inputs.clear()
+        self._var_table.setRowCount(0)
 
         if self._mode == "preset" and self._templates:
-            # Merge variables and records from all selected templates
             tpl_vars = {}
             records = []
             for tpl in self._templates:
@@ -309,53 +307,54 @@ class WizardInterface(QtWidgets.QWidget):
         found_vars.discard("domain")
         found_vars.discard("subdomain_prefix")
 
-        # Always show {domain} as read-only
-        domain_label = CaptionLabel("{domain} — auto-populated per selected domain")
-        self._var_form_layout.addRow(StrongBodyLabel("{domain}"), domain_label)
-
-        # Always show subdomain prefix
-        prefix_edit = LineEdit()
-        prefix_edit.setPlaceholderText("Optional — e.g. 'staging'")
-        prefix_edit.textChanged.connect(lambda: self._validate_current_step())
-        self._var_inputs["subdomain_prefix"] = prefix_edit
-        prefix_label = QtWidgets.QWidget()
-        prefix_lay = QtWidgets.QVBoxLayout(prefix_label)
-        prefix_lay.setContentsMargins(0, 0, 0, 0)
-        prefix_lay.setSpacing(2)
-        prefix_lay.addWidget(prefix_edit)
-        prefix_lay.addWidget(CaptionLabel(
-            "If set, prepended to all subnames (e.g. _dmarc → _dmarc.staging)"
-        ))
-        self._var_form_layout.addRow(
-            StrongBodyLabel("{subdomain_prefix}"), prefix_label
-        )
-
-        # Template-defined variables
+        # Build rows: (var_key, display_label, default_or_None, hint, required)
+        rows = [
+            (None, "{domain}", None, "Auto-populated per selected domain", False),
+            ("subdomain_prefix", "{subdomain_prefix}", "",
+             "Optional prefix for all names (e.g. staging)", False),
+        ]
         for var_name in sorted(found_vars):
             meta = tpl_vars.get(var_name, {})
-            edit = LineEdit()
-            edit.setPlaceholderText(meta.get("hint", f"Value for {{{var_name}}}"))
-            default = meta.get("default", "")
-            if default:
-                edit.setText(default)
-            edit.textChanged.connect(lambda: self._validate_current_step())
-            self._var_inputs[var_name] = edit
+            rows.append((
+                var_name,
+                meta.get("label", f"{{{var_name}}}"),
+                meta.get("default", ""),
+                meta.get("hint", ""),
+                meta.get("required", True),
+            ))
 
-            label_text = meta.get("label", f"{{{var_name}}}")
-            required = meta.get("required", True)
+        self._var_table.setRowCount(len(rows))
+        for r, (var_key, label, default, hint, required) in enumerate(rows):
+            # Variable name column
+            name_item = QtWidgets.QTableWidgetItem(label)
+            name_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            font = name_item.font()
+            font.setBold(True)
+            name_item.setFont(font)
+            self._var_table.setItem(r, 0, name_item)
 
-            field_widget = QtWidgets.QWidget()
-            field_lay = QtWidgets.QVBoxLayout(field_widget)
-            field_lay.setContentsMargins(0, 0, 0, 0)
-            field_lay.setSpacing(2)
-            field_lay.addWidget(edit)
-            if meta.get("hint"):
-                field_lay.addWidget(CaptionLabel(meta["hint"]))
-            if required:
-                field_lay.addWidget(CaptionLabel("Required"))
+            # Value column
+            if default is None:
+                ro_item = QtWidgets.QTableWidgetItem("(automatic)")
+                ro_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                ro_item.setForeground(QtGui.QColor("#9E9E9E"))
+                self._var_table.setItem(r, 1, ro_item)
+            else:
+                edit = LineEdit()
+                edit.setPlaceholderText(hint if hint else f"Value for {label}")
+                if default:
+                    edit.setText(default)
+                edit.textChanged.connect(lambda: self._validate_current_step())
+                self._var_table.setCellWidget(r, 1, edit)
+                self._var_inputs[var_key] = edit
 
-            row_label = StrongBodyLabel(label_text)
-            self._var_form_layout.addRow(row_label, field_widget)
+            # Hint column
+            status = "Required" if required else "Optional"
+            hint_text = f"{hint} ({status})" if hint else status
+            hint_item = QtWidgets.QTableWidgetItem(hint_text)
+            hint_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            hint_item.setForeground(QtGui.QColor("#9E9E9E"))
+            self._var_table.setItem(r, 2, hint_item)
 
         if not found_vars:
             self._var_desc.setText(
@@ -1172,21 +1171,27 @@ class WizardInterface(QtWidgets.QWidget):
         self._var_desc.setWordWrap(True)
         glay.addWidget(self._var_desc)
 
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        self._var_table = TableWidget()
+        self._var_table.setColumnCount(3)
+        self._var_table.setHorizontalHeaderLabels(["Variable", "Value", "Hint"])
+        self._var_table.verticalHeader().setVisible(False)
+        self._var_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
-
-        self._var_form_widget = QtWidgets.QWidget()
-        self._var_form_layout = QtWidgets.QFormLayout(self._var_form_widget)
-        self._var_form_layout.setContentsMargins(0, 0, 0, 0)
-        self._var_form_layout.setSpacing(10)
-
-        scroll.setWidget(self._var_form_widget)
-        glay.addWidget(scroll, 1)
+        self._var_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.NoSelection
+        )
+        self._var_table.horizontalHeader().setSectionResizeMode(
+            0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._var_table.horizontalHeader().setSectionResizeMode(
+            1, QtWidgets.QHeaderView.ResizeMode.Stretch
+        )
+        self._var_table.horizontalHeader().setSectionResizeMode(
+            2, QtWidgets.QHeaderView.ResizeMode.Stretch
+        )
+        self._var_table.setAlternatingRowColors(True)
+        glay.addWidget(self._var_table, 1)
 
         self._var_inputs = {}
 
