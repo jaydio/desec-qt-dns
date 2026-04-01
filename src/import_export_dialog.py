@@ -16,7 +16,7 @@ from PySide6.QtCore import Signal, QThread, Qt
 from import_export_manager import ImportExportManager
 from qfluentwidgets import (
     PushButton, PrimaryPushButton, ProgressBar, LineEdit, CheckBox,
-    TextEdit, ListView, StrongBodyLabel, CaptionLabel,
+    TextEdit, ListView, SearchLineEdit, StrongBodyLabel, CaptionLabel,
     InfoBar, InfoBarPosition,
 )
 import logging
@@ -111,6 +111,11 @@ class ExportInterface(QtWidgets.QWidget):
         self._zone_count_label = CaptionLabel("0 zones")
         title_row.addWidget(self._zone_count_label)
         left_lay.addLayout(title_row)
+
+        self._zone_search = SearchLineEdit()
+        self._zone_search.setPlaceholderText("Filter zones...")
+        self._zone_search.textChanged.connect(self._filter_zones)
+        left_lay.addWidget(self._zone_search)
 
         # Zone list view with Ctrl/Shift multi-select (no checkboxes)
         self._zone_model = QtCore.QStringListModel(self.available_zones)
@@ -221,6 +226,15 @@ class ExportInterface(QtWidgets.QWidget):
         self._zone_count_label.setText(
             f"{len(self.available_zones)} zone{'s' if len(self.available_zones) != 1 else ''}"
         )
+
+    def _filter_zones(self, text):
+        ft = text.strip().lower()
+        if ft:
+            filtered = [z for z in self.available_zones if ft in z.lower()]
+        else:
+            filtered = self.available_zones
+        self._zone_model.setStringList(filtered)
+        self._zone_count_label.setText(f"{len(filtered)} zones")
 
     def select_all_zones(self):
         sel = self._zone_list.selectionModel()
