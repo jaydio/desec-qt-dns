@@ -399,7 +399,62 @@ class WizardInterface(QtWidgets.QWidget):
         )
 
     def _on_enter_preview_step(self):
-        pass
+        """Resolve all records and populate the preview table."""
+        self._preview_rows = self._resolve_records()
+
+        self._preview_table.setRowCount(len(self._preview_rows))
+        n_new = n_conflict = n_skip = n_error = 0
+        domains_seen = set()
+
+        for r, row in enumerate(self._preview_rows):
+            domains_seen.add(row["domain"])
+            self._preview_table.setItem(r, 0, QtWidgets.QTableWidgetItem(row["domain"]))
+            self._preview_table.setItem(r, 1, QtWidgets.QTableWidgetItem(row["subname"] or "@"))
+            self._preview_table.setItem(r, 2, QtWidgets.QTableWidgetItem(row["type"]))
+            self._preview_table.setItem(r, 3, QtWidgets.QTableWidgetItem(str(row["ttl"])))
+            self._preview_table.setItem(r, 4, QtWidgets.QTableWidgetItem(row["content"]))
+
+            if row["error"]:
+                status_text = f"Error: {row['error']}"
+                n_error += 1
+            elif row["status"] == "new":
+                status_text = "New"
+                n_new += 1
+            elif row["status"] == "conflict":
+                label = "Merge" if self._conflict_strategy == "merge" else "Replace"
+                status_text = f"Conflict → {label}"
+                n_conflict += 1
+            else:
+                status_text = "Skipped"
+                n_skip += 1
+
+            status_item = QtWidgets.QTableWidgetItem(status_text)
+            if row["error"]:
+                status_item.setForeground(QtGui.QColor("#E53935"))
+            elif row["status"] == "new":
+                status_item.setForeground(QtGui.QColor("#43A047"))
+            elif row["status"] == "skipped":
+                status_item.setForeground(QtGui.QColor("#9E9E9E"))
+            else:
+                status_item.setForeground(QtGui.QColor("#FB8C00"))
+            self._preview_table.setItem(r, 5, status_item)
+
+        actionable = n_new + n_conflict
+        parts = [f"{len(self._preview_rows)} records across {len(domains_seen)} domains"]
+        detail = []
+        if n_new:
+            detail.append(f"{n_new} new")
+        if n_conflict:
+            detail.append(f"{n_conflict} conflicts")
+        if n_skip:
+            detail.append(f"{n_skip} skipped")
+        if n_error:
+            detail.append(f"{n_error} errors")
+        if detail:
+            parts.append(f"({', '.join(detail)})")
+        self._preview_summary.setText(" ".join(parts))
+
+        self._btn_next.setEnabled(actionable > 0 and n_error == 0)
 
     # ------------------------------------------------------------------
     # Validation hooks (placeholders)
@@ -968,11 +1023,31 @@ class WizardInterface(QtWidgets.QWidget):
     def _set_conflict(self, strategy):
         self._conflict_strategy = strategy
 
-    def _build_step_preview(self) -> QtWidgets.QWidget:
+    def _build_step_preview(self):
         w = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addWidget(CaptionLabel("Step placeholder: Preview"))
-        layout.addStretch()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+
+        lay.addWidget(StrongBodyLabel("Preview"))
+        self._preview_summary = CaptionLabel("")
+        self._preview_summary.setWordWrap(True)
+        lay.addWidget(self._preview_summary)
+
+        self._preview_table = TableWidget()
+        self._preview_table.setColumnCount(6)
+        self._preview_table.setHorizontalHeaderLabels(
+            ["Domain", "Subdomain", "Type", "TTL", "Content", "Status"]
+        )
+        self._preview_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._preview_table.horizontalHeader().setStretchLastSection(True)
+        self._preview_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        lay.addWidget(self._preview_table, 1)
+
         return w
 
     def _build_step_execute(self) -> QtWidgets.QWidget:
