@@ -32,7 +32,6 @@ CATEGORIES = [
     "Cloud Providers",
     "Collaboration",
     "Identity/Auth",
-    "Monitoring/Status",
     "Developer Platforms",
     "Chat/Social",
     "ACME/Certificates",
@@ -99,56 +98,6 @@ TEMPLATES = [
                 "subname": "_dmarc",
                 "ttl": 3600,
                 "content": "\"v=DMARC1; p=quarantine; rua=mailto:dmarc@{domain}\"",
-            },
-        ],
-    },
-    {
-        "id": "google_site_verify_txt",
-        "name": "Google Site Verification (TXT)",
-        "description": "TXT record for verifying domain ownership with Google Search Console.",
-        "category": "Google",
-        "variables": {
-            "google_verify_code": {
-                "label": "Google Verification Code",
-                "hint": "Full verification string from Google Search Console (e.g. google-site-verification=xxxxx)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "TXT",
-                "subname": "",
-                "ttl": 3600,
-                "content": "\"{google_verify_code}\"",
-            },
-        ],
-    },
-    {
-        "id": "google_site_verify_cname",
-        "name": "Google Site Verification (CNAME)",
-        "description": "CNAME record for verifying domain ownership with Google (alternative method).",
-        "category": "Google",
-        "variables": {
-            "google_cname_label": {
-                "label": "CNAME Label",
-                "hint": "The subdomain label provided by Google (e.g. abcde1234xyz)",
-                "default": "",
-                "required": True,
-            },
-            "google_cname_target": {
-                "label": "CNAME Target",
-                "hint": "The target hostname provided by Google with trailing dot (e.g. abcde1234xyz.dv.googlehosted.com.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "{google_cname_label}",
-                "ttl": 3600,
-                "content": "{google_cname_target}",
             },
         ],
     },
@@ -1012,12 +961,12 @@ TEMPLATES = [
     },
 
     # =========================================================================
-    # Web Hosting (6)
+    # Web Hosting (5)
     # =========================================================================
     {
-        "id": "web_apex_a_aaaa",
-        "name": "Web Server (A + AAAA)",
-        "description": "Dual-stack A and AAAA records pointing the apex domain to a web server.",
+        "id": "web_server",
+        "name": "Web Server (A + AAAA + www)",
+        "description": "A and AAAA records for apex, plus www CNAME redirect.",
         "category": "Web Hosting",
         "variables": {
             "ipv4_address": {
@@ -1028,29 +977,15 @@ TEMPLATES = [
             },
             "ipv6_address": {
                 "label": "IPv6 Address",
-                "hint": "IPv6 address of your web server (delete the AAAA record if not applicable)",
+                "hint": "IPv6 address of your web server",
                 "default": "",
-                "required": False,
+                "required": True,
             },
         },
         "records": [
             {"type": "A", "subname": "", "ttl": 3600, "content": "{ipv4_address}"},
             {"type": "AAAA", "subname": "", "ttl": 3600, "content": "{ipv6_address}"},
-        ],
-    },
-    {
-        "id": "web_www_cname",
-        "name": "www CNAME",
-        "description": "CNAME pointing www to the apex domain (common catch-all redirect setup).",
-        "category": "Web Hosting",
-        "variables": {},
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "www",
-                "ttl": 3600,
-                "content": "{domain}.",
-            },
+            {"type": "CNAME", "subname": "www", "ttl": 3600, "content": "{domain}."},
         ],
     },
     {
@@ -1152,52 +1087,8 @@ TEMPLATES = [
     },
 
     # =========================================================================
-    # CDN/Protection (3)
+    # CDN/Protection (1)
     # =========================================================================
-    {
-        "id": "aws_cloudfront",
-        "name": "AWS CloudFront",
-        "description": "CNAME pointing www to an AWS CloudFront distribution.",
-        "category": "CDN/Protection",
-        "variables": {
-            "cf_distribution": {
-                "label": "CloudFront Distribution Domain",
-                "hint": "Your CloudFront distribution domain with trailing dot (e.g. d111111abcdef8.cloudfront.net.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "www",
-                "ttl": 3600,
-                "content": "{cf_distribution}",
-            },
-        ],
-    },
-    {
-        "id": "fastly_cdn",
-        "name": "Fastly CDN",
-        "description": "CNAME pointing www to a Fastly CDN endpoint.",
-        "category": "CDN/Protection",
-        "variables": {
-            "fastly_domain": {
-                "label": "Fastly Domain",
-                "hint": "Your Fastly service domain with trailing dot (e.g. x.global.prod.fastly.net.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "www",
-                "ttl": 3600,
-                "content": "{fastly_domain}",
-            },
-        ],
-    },
     {
         "id": "cloudflare_tunnel",
         "name": "Cloudflare Tunnel",
@@ -1228,36 +1119,8 @@ TEMPLATES = [
     },
 
     # =========================================================================
-    # Cloud Providers (3)
+    # Cloud Providers (1)
     # =========================================================================
-    {
-        "id": "aws_acm_validation",
-        "name": "AWS ACM Certificate Validation",
-        "description": "CNAME record for validating an AWS ACM certificate via DNS.",
-        "category": "Cloud Providers",
-        "variables": {
-            "acm_cname_name": {
-                "label": "CNAME Name (Subname)",
-                "hint": "The CNAME record name from ACM, relative to your domain (e.g. _abc123def456)",
-                "default": "",
-                "required": True,
-            },
-            "acm_cname_value": {
-                "label": "CNAME Target",
-                "hint": "The CNAME target from ACM with trailing dot (e.g. _xyz.acm-validations.aws.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "{acm_cname_name}",
-                "ttl": 3600,
-                "content": "{acm_cname_value}",
-            },
-        ],
-    },
     {
         "id": "azure_custom_domain",
         "name": "Azure Custom Domain",
@@ -1292,54 +1155,10 @@ TEMPLATES = [
             },
         ],
     },
-    {
-        "id": "gcp_verification",
-        "name": "Google Cloud Verification",
-        "description": "TXT record for verifying domain ownership with Google Cloud Console.",
-        "category": "Cloud Providers",
-        "variables": {
-            "gcp_verify_code": {
-                "label": "GCP Verification Code",
-                "hint": "Full verification string from Google Cloud Console (e.g. google-site-verification=xxxxx)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "TXT",
-                "subname": "",
-                "ttl": 3600,
-                "content": "\"{gcp_verify_code}\"",
-            },
-        ],
-    },
 
     # =========================================================================
-    # Collaboration (3)
+    # Collaboration (2)
     # =========================================================================
-    {
-        "id": "slack_domain_verify",
-        "name": "Slack Domain Verification",
-        "description": "TXT record for verifying domain ownership with Slack.",
-        "category": "Collaboration",
-        "variables": {
-            "slack_verify_code": {
-                "label": "Slack Verification Code",
-                "hint": "The TXT verification value from Slack admin settings",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "TXT",
-                "subname": "",
-                "ttl": 3600,
-                "content": "\"{slack_verify_code}\"",
-            },
-        ],
-    },
     {
         "id": "notion_custom_domain",
         "name": "Notion Custom Domain",
@@ -1434,176 +1253,10 @@ TEMPLATES = [
             },
         ],
     },
-    {
-        "id": "auth0_custom_domain",
-        "name": "Auth0 Custom Domain",
-        "description": "CNAME record for an Auth0 custom domain (e.g. auth.yourdomain.com).",
-        "category": "Identity/Auth",
-        "variables": {
-            "auth0_target": {
-                "label": "Auth0 CNAME Target",
-                "hint": "The CNAME target from the Auth0 dashboard with trailing dot (e.g. myapp.us.auth0.com.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "auth",
-                "ttl": 3600,
-                "content": "{auth0_target}",
-            },
-        ],
-    },
 
     # =========================================================================
-    # Monitoring/Status (3)
+    # Developer Platforms (2)
     # =========================================================================
-    {
-        "id": "statuspage_io",
-        "name": "Statuspage.io",
-        "description": "CNAME pointing a status subdomain to an Atlassian Statuspage custom domain.",
-        "category": "Monitoring/Status",
-        "variables": {
-            "statuspage_target": {
-                "label": "Statuspage CNAME Target",
-                "hint": "CNAME target from Statuspage settings with trailing dot (e.g. custom.statuspage.io.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "status",
-                "ttl": 3600,
-                "content": "{statuspage_target}",
-            },
-        ],
-    },
-    {
-        "id": "uptimerobot_status",
-        "name": "UptimeRobot Status Page",
-        "description": "CNAME pointing a status subdomain to an UptimeRobot custom status page.",
-        "category": "Monitoring/Status",
-        "variables": {
-            "uptimerobot_target": {
-                "label": "UptimeRobot CNAME Target",
-                "hint": "CNAME target from UptimeRobot with trailing dot (e.g. stats.uptimerobot.com.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "status",
-                "ttl": 3600,
-                "content": "{uptimerobot_target}",
-            },
-        ],
-    },
-    {
-        "id": "betteruptime_status",
-        "name": "Better Uptime Status Page",
-        "description": "CNAME pointing a status subdomain to a Better Uptime custom status page.",
-        "category": "Monitoring/Status",
-        "variables": {
-            "betteruptime_target": {
-                "label": "Better Uptime CNAME Target",
-                "hint": "CNAME target from Better Uptime with trailing dot (e.g. statuspage.betteruptime.com.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "status",
-                "ttl": 3600,
-                "content": "{betteruptime_target}",
-            },
-        ],
-    },
-
-    # =========================================================================
-    # Developer Platforms (4)
-    # =========================================================================
-    {
-        "id": "heroku",
-        "name": "Heroku",
-        "description": "CNAME pointing www to a Heroku custom domain DNS target.",
-        "category": "Developer Platforms",
-        "variables": {
-            "heroku_dns_target": {
-                "label": "Heroku DNS Target",
-                "hint": "The DNS target from 'heroku domains' or the Heroku dashboard with trailing dot (e.g. xxx.herokudns.com.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "www",
-                "ttl": 3600,
-                "content": "{heroku_dns_target}",
-            },
-        ],
-    },
-    {
-        "id": "fly_io",
-        "name": "Fly.io",
-        "description": "A and AAAA records at apex and www CNAME for a Fly.io application.",
-        "category": "Developer Platforms",
-        "variables": {
-            "fly_ipv4": {
-                "label": "Fly.io IPv4 Address",
-                "hint": "IPv4 address from 'flyctl ips list'",
-                "default": "",
-                "required": True,
-            },
-            "fly_ipv6": {
-                "label": "Fly.io IPv6 Address",
-                "hint": "IPv6 address from 'flyctl ips list'",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {"type": "A", "subname": "", "ttl": 3600, "content": "{fly_ipv4}"},
-            {"type": "AAAA", "subname": "", "ttl": 3600, "content": "{fly_ipv6}"},
-            {
-                "type": "CNAME",
-                "subname": "www",
-                "ttl": 3600,
-                "content": "{domain}.",
-            },
-        ],
-    },
-    {
-        "id": "railway",
-        "name": "Railway",
-        "description": "CNAME pointing www to a Railway deployment.",
-        "category": "Developer Platforms",
-        "variables": {
-            "railway_target": {
-                "label": "Railway Domain Target",
-                "hint": "Your Railway deployment hostname with trailing dot (e.g. xxx.up.railway.app.)",
-                "default": "",
-                "required": True,
-            },
-        },
-        "records": [
-            {
-                "type": "CNAME",
-                "subname": "www",
-                "ttl": 3600,
-                "content": "{railway_target}",
-            },
-        ],
-    },
     {
         "id": "render",
         "name": "Render",
