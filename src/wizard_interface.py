@@ -284,6 +284,9 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _on_enter_variables_step(self):
         """Rebuild the variable table based on the current template/custom records."""
+        # Preserve previously entered values
+        saved = {k: e.text() for k, e in self._var_inputs.items()
+                 if hasattr(e, 'text')}
         self._var_inputs.clear()
         self._var_table.setRowCount(0)
 
@@ -343,7 +346,10 @@ class WizardInterface(QtWidgets.QWidget):
                 edit = LineEdit()
                 edit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
                 edit.setPlaceholderText(hint if hint else f"Value for {label}")
-                if default:
+                # Restore saved value, fall back to default
+                if var_key in saved:
+                    edit.setText(saved[var_key])
+                elif default:
                     edit.setText(default)
                 edit.textChanged.connect(lambda: self._validate_current_step())
                 self._var_table.setCellWidget(r, 1, edit)
