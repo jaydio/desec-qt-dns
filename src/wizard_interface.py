@@ -452,7 +452,7 @@ class WizardInterface(QtWidgets.QWidget):
                 n_skip += 1
 
             status_item = QtWidgets.QTableWidgetItem(status_text)
-            if row["error"]:
+            if row["errors"]:
                 status_item.setForeground(QtGui.QColor("#E53935"))
             elif row["status"] == "new":
                 status_item.setForeground(QtGui.QColor("#43A047"))
