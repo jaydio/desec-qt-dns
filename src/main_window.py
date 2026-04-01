@@ -43,6 +43,7 @@ from queue_interface import QueueInterface
 from version_manager import VersionManager
 from history_interface import HistoryInterface
 from dnssec_interface import DnssecInterface
+from wizard_interface import WizardInterface
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +438,13 @@ class MainWindow(FluentWindow):
         )
         self.dnssec_interface.log_message.connect(self.log_message)
 
+        self.wizard_interface = WizardInterface(
+            self.api_client, self.cache_manager,
+            api_queue=self.api_queue, version_manager=self.version_manager,
+        )
+        self.wizard_interface.log_message.connect(self.log_message)
+        self.wizard_interface.records_changed.connect(self.on_records_changed)
+
         self.token_manager_interface = TokenManagerInterface(
             self.api_client, api_queue=self.api_queue, cache_manager=self.cache_manager
         )
@@ -451,6 +459,7 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.dns_interface, FluentIcon.GLOBE, "DNS")
         self.addSubInterface(self.dnssec_interface, FluentIcon.VPN, "DNSSEC")
         self.addSubInterface(self.search_replace_interface, FluentIcon.SEARCH, "Search")
+        self.addSubInterface(self.wizard_interface, FluentIcon.BOOK_SHELF, "Wizard")
 
         self.navigationInterface.addSeparator()
 
