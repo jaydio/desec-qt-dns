@@ -507,20 +507,15 @@ class WizardInterface(QtWidgets.QWidget):
                     continue
                 # Skip validation for unresolved variables
                 if re.search(r'\{\w+\}', content):
-                    content_edit.setStyleSheet("")
                     content_edit.setToolTip("")
                     continue
                 is_valid, err = _validate_record_content(
                     type_combo.currentText(), content
                 )
                 if not is_valid:
-                    content_edit.setStyleSheet(
-                        "LineEdit { border: 1px solid #E53935; }"
-                    )
-                    content_edit.setToolTip(err)
+                    content_edit.setToolTip(f"\u26A0 {err}")
                     all_valid = False
                 else:
-                    content_edit.setStyleSheet("")
                     content_edit.setToolTip("")
             return all_valid
 
