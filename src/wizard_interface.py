@@ -436,6 +436,71 @@ class WizardInterface(QtWidgets.QWidget):
             result[var_name] = edit.text().strip()
         return result
 
+    def _resolve_records(self):
+        """
+        Resolve template/custom records × variables × domains into a flat
+        list of concrete record operations.
+
+        Returns list of dicts:
+            {domain, subname, type, ttl, content, status, existing_records, error}
+        where status is "new", "conflict", or "skipped".
+        """
+        variables = self._collect_variables()
+        prefix = variables.pop("subdomain_prefix", "").strip()
+
+        if self._mode == "preset" and self._template:
+            records = self._template["records"]
+        else:
+            records = self._custom_records
+
+        result = []
+        for domain in self._selected_domains:
+            cached_records, _ = self._cache.get_cached_records(domain)
+            existing_index = {}
+            if cached_records:
+                for rr in cached_records:
+                    key = (rr.get("subname", ""), rr.get("type", ""))
+                    existing_index[key] = rr.get("records", [])
+
+            domain_vars = {**variables, "domain": domain}
+
+            for rec in records:
+                content = rec["content"]
+                subname = rec["subname"]
+                for var, val in domain_vars.items():
+                    content = content.replace(f"{{{var}}}", val)
+                    subname = subname.replace(f"{{{var}}}", val)
+
+                if prefix:
+                    if subname:
+                        subname = f"{subname}.{prefix}"
+                    else:
+                        subname = prefix
+
+                is_valid, err_msg = _validate_record_content(rec["type"], content)
+
+                existing = existing_index.get((subname, rec["type"]))
+                if existing is not None:
+                    if self._conflict_strategy == "skip":
+                        status = "skipped"
+                    else:
+                        status = "conflict"
+                else:
+                    status = "new"
+
+                result.append({
+                    "domain": domain,
+                    "subname": subname,
+                    "type": rec["type"],
+                    "ttl": rec["ttl"],
+                    "content": content,
+                    "status": status,
+                    "existing_records": existing or [],
+                    "error": err_msg if not is_valid else "",
+                })
+
+        return result
+
     # ------------------------------------------------------------------
     # Template step helpers
     # ------------------------------------------------------------------
