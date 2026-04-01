@@ -28,7 +28,7 @@ from qfluentwidgets import (
     isDarkTheme, InfoBar, InfoBarPosition,
 )
 
-from fluent_styles import container_qss
+from fluent_styles import container_qss, SPLITTER_QSS
 from record_widget import _validate_record_content
 from api_queue import QueueItem, PRIORITY_NORMAL
 from wizard_templates import TEMPLATES, CATEGORIES
@@ -1047,16 +1047,22 @@ class WizardInterface(QtWidgets.QWidget):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setSpacing(0)
+
+        # ── Preset path: search + splitter (list | preview) ────────────
+        preset_w = QtWidgets.QWidget()
+        preset_lay = QtWidgets.QVBoxLayout(preset_w)
+        preset_lay.setContentsMargins(0, 0, 0, 0)
+        preset_lay.setSpacing(6)
 
         self._template_search = SearchLineEdit()
         self._template_search.setPlaceholderText("Search templates...")
         self._template_search.textChanged.connect(self._filter_templates)
-        lay.addWidget(self._template_search)
+        preset_lay.addWidget(self._template_search)
 
-        # Split: template list left, preview right
         splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
+        splitter.setStyleSheet(SPLITTER_QSS)
 
         # Template list (multi-select)
         self._template_list = ListWidget()
@@ -1069,7 +1075,7 @@ class WizardInterface(QtWidgets.QWidget):
         # Preview panel
         preview_w = QtWidgets.QWidget()
         self._template_preview_lay = QtWidgets.QVBoxLayout(preview_w)
-        self._template_preview_lay.setContentsMargins(8, 0, 0, 0)
+        self._template_preview_lay.setContentsMargins(6, 0, 0, 0)
         self._template_preview_lay.setSpacing(6)
 
         self._template_name_label = StrongBodyLabel("")
@@ -1098,12 +1104,14 @@ class WizardInterface(QtWidgets.QWidget):
         splitter.addWidget(preview_w)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
+        preset_lay.addWidget(splitter, 1)
 
-        # Custom mode panel (stacked with the splitter)
+        # ── Custom path ───────────────────────────────────────────────
         self._custom_builder = self._build_custom_builder()
 
+        # Stack preset vs custom
         self._template_stack = QtWidgets.QStackedWidget()
-        self._template_stack.addWidget(splitter)
+        self._template_stack.addWidget(preset_w)
         self._template_stack.addWidget(self._custom_builder)
 
         lay.addWidget(self._template_stack, 1)
