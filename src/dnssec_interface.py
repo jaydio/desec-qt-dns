@@ -12,7 +12,7 @@ Right pane: DS and DNSKEY key material, styled with card sections,
 import logging
 
 from PySide6 import QtWidgets, QtGui, QtCore
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
 
 from qfluentwidgets import (
     PushButton, SearchLineEdit, LineEdit, ListWidget,
@@ -35,6 +35,138 @@ _DIGEST_NAMES = {
 }
 
 _FLAG_NAMES = {"256": "ZSK", "257": "KSK"}
+
+
+class _CollapsibleWarning(QtWidgets.QFrame):
+    """Collapsible amber warning card with animated expand/collapse."""
+
+    _DURATION = 200  # ms
+
+    def __init__(self, title: str, body_html: str, parent=None):
+        super().__init__(parent)
+        self._collapsed = True
+
+        self.setObjectName("dnssecWarning")
+        self._apply_style()
+
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── Header (always visible, clickable) ─────────────────────────
+        self._header = QtWidgets.QFrame()
+        self._header.setObjectName("dnssecWarningHdr")
+        self._header.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._header.mousePressEvent = lambda _: self.toggle()
+
+        hdr_lay = QtWidgets.QHBoxLayout(self._header)
+        hdr_lay.setContentsMargins(14, 10, 14, 10)
+        hdr_lay.setSpacing(10)
+
+        icon = QtWidgets.QLabel("\u26A0")
+        icon.setStyleSheet("font-size: 16px; background: transparent; border: none;")
+        hdr_lay.addWidget(icon)
+
+        title_lbl = StrongBodyLabel(title)
+        title_lbl.setStyleSheet("background: transparent; border: none;")
+        hdr_lay.addWidget(title_lbl, 1)
+
+        self._chevron = QtWidgets.QLabel("\u25BC")
+        self._chevron.setStyleSheet(
+            "font-size: 11px; color: rgba(150,150,150,0.85); "
+            "background: transparent; border: none;"
+        )
+        hdr_lay.addWidget(self._chevron)
+
+        root.addWidget(self._header)
+
+        # ── Body (collapsible) ─────────────────────────────────────────
+        self._body = QtWidgets.QWidget()
+        self._body.setObjectName("dnssecWarningBody")
+        self._body.setStyleSheet(
+            "QWidget#dnssecWarningBody { background: transparent; border: none; }"
+        )
+        body_lay = QtWidgets.QVBoxLayout(self._body)
+        body_lay.setContentsMargins(14, 4, 14, 14)
+        body_lay.setSpacing(0)
+
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        dark = isDarkTheme()
+        sep.setStyleSheet(
+            f"color: {'rgba(255,193,7,0.18)' if dark else 'rgba(200,160,0,0.25)'};"
+        )
+        body_lay.addWidget(sep)
+
+        content = QtWidgets.QLabel(body_html)
+        content.setWordWrap(True)
+        content.setTextFormat(Qt.TextFormat.RichText)
+        content.setOpenExternalLinks(True)
+        content.setStyleSheet(
+            "background: transparent; border: none; "
+            "padding-top: 10px; line-height: 1.5;"
+        )
+        body_lay.addWidget(content)
+
+        root.addWidget(self._body)
+
+        # Start collapsed
+        self._body.setMaximumHeight(0)
+        self._body.setVisible(False)
+        self._chevron.setText("\u25BC")
+
+    def _apply_style(self):
+        dark = isDarkTheme()
+        self.setStyleSheet(
+            f"QFrame#dnssecWarning {{"
+            f"  background: {'rgba(255,193,7,0.08)' if dark else '#FFF8E1'};"
+            f"  border: 1px solid {'rgba(255,193,7,0.22)' if dark else 'rgba(245,190,0,0.35)'};"
+            f"  border-left: 3px solid {'#FFB300' if dark else '#F9A825'};"
+            f"  border-radius: 6px;"
+            f"}}"
+            f"QFrame#dnssecWarningHdr {{"
+            f"  background: transparent; border: none;"
+            f"}}"
+        )
+
+    def toggle(self):
+        if self._collapsed:
+            self._expand()
+        else:
+            self._collapse()
+
+    def _expand(self):
+        self._collapsed = False
+        self._chevron.setText("\u25B2")
+        self._body.setVisible(True)
+
+        # Measure natural height
+        self._body.setMaximumHeight(16777215)
+        self._body.adjustSize()
+        target = self._body.sizeHint().height()
+
+        self._body.setMaximumHeight(0)
+        anim = QPropertyAnimation(self._body, b"maximumHeight", self)
+        anim.setDuration(self._DURATION)
+        anim.setStartValue(0)
+        anim.setEndValue(target)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(
+            lambda: self._body.setMaximumHeight(16777215)
+        )
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _collapse(self):
+        self._collapsed = True
+        self._chevron.setText("\u25BC")
+
+        anim = QPropertyAnimation(self._body, b"maximumHeight", self)
+        anim.setDuration(self._DURATION)
+        anim.setStartValue(self._body.height())
+        anim.setEndValue(0)
+        anim.setEasingCurve(QEasingCurve.Type.InCubic)
+        anim.finished.connect(lambda: self._body.setVisible(False))
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
 
 class DnssecInterface(QtWidgets.QWidget):
@@ -305,6 +437,23 @@ class DnssecInterface(QtWidgets.QWidget):
         check_lay.addStretch()
 
         self._ins(check)
+
+        # ── Migration warning (collapsible) ────────────────────────────
+        warning = _CollapsibleWarning(
+            "Moving a domain that had DNSSEC enabled before? Read this!",
+            '<b>Be careful!</b> Simply replacing records can cause errors, '
+            'because resolvers may have old NS or DNSSEC settings cached. '
+            'To prevent this, choose one of the following:'
+            '<ul style="margin-top: 6px; margin-bottom: 0;">'
+            '<li>Keep DNSSEC enabled throughout: please contact support to '
+            'configure a temporary &quot;multi-signer&quot; setup '
+            '(RFC 8901).</li>'
+            '<li>Temporarily &quot;go insecure&quot; (easier): turn off old '
+            'DNSSEC, wait 24h, change NS records, wait 24h, re-enable '
+            'DNSSEC.</li>'
+            '</ul>',
+        )
+        self._ins(warning)
 
     # ── DS card ─────────────────────────────────────────────────────────
 

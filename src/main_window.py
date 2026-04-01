@@ -1015,7 +1015,7 @@ class MainWindow(FluentWindow):
         # (skip NS at apex — deSEC manages those)
         for rr in (current or []):
             key = (rr.get("subname", ""), rr.get("type", ""))
-            if key not in target_keys and key[1] != "NS":
+            if key not in target_keys and not (key[0] == "" and key[1] == "NS"):
                 target_rrsets.append({
                     "subname": key[0],
                     "type": key[1],
@@ -1248,9 +1248,16 @@ class MainWindow(FluentWindow):
     # ── Keyboard events ──────────────────────────────────────────────────────
 
     def keyPressEvent(self, event):
-        # Consume Enter/Return to prevent FluentWindow from hiding
+        # Consume unhandled Enter/Return to prevent FluentWindow from hiding,
+        # but only when no focused widget wants it (buttons, line edits handle
+        # their own Enter via returnPressed / clicked signals).
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            event.accept()
+            focused = QtWidgets.QApplication.focusWidget()
+            if focused is None or focused is self:
+                event.accept()
+                return
+            # Let the focused widget handle Enter normally
+            super().keyPressEvent(event)
             return
         if event.key() == Qt.Key.Key_F5:
             self.sync_data()

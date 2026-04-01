@@ -385,6 +385,13 @@ class WizardInterface(QtWidgets.QWidget):
         )
         self._domain_model.setStringList(self._all_domain_names)
         self._domain_list.clearSelection()
+        # Connect only once — selectionModel is recreated when model is set
+        try:
+            self._domain_list.selectionModel().selectionChanged.disconnect(
+                self._on_domain_selection_changed
+            )
+        except RuntimeError:
+            pass
         self._domain_list.selectionModel().selectionChanged.connect(
             self._on_domain_selection_changed
         )
@@ -398,6 +405,12 @@ class WizardInterface(QtWidgets.QWidget):
         else:
             filtered = self._all_domain_names
         self._domain_model.setStringList(filtered)
+        # setStringList clears selection — sync state
+        self._selected_domains = [
+            idx.data() for idx in self._domain_list.selectedIndexes()
+        ]
+        self._update_domain_count()
+        self._validate_current_step()
 
     def _select_all_domains(self):
         sel = self._domain_list.selectionModel()
@@ -1025,7 +1038,8 @@ class WizardInterface(QtWidgets.QWidget):
         failed_indices = [
             idx for idx, (ok, _) in self._exec_results.items() if not ok
         ]
-        self._exec_completed = self._exec_total - len(failed_indices)
+        self._exec_succeeded = self._exec_total - len(failed_indices)
+        self._exec_completed = self._exec_succeeded
         self._exec_failed = 0
         self._exec_progress.setValue(self._exec_completed)
 
