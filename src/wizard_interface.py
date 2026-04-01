@@ -1044,8 +1044,8 @@ class WizardInterface(QtWidgets.QWidget):
             bg = "rgba(0,120,212,0.12)" if dark else "rgba(0,120,212,0.08)"
             border = "rgba(0,120,212,0.6)" if dark else "rgba(0,120,212,0.5)"
         else:
-            bg = "rgba(255,255,255,0.04)" if dark else "rgba(0,0,0,0.03)"
-            border = "rgba(255,255,255,0.10)" if dark else "rgba(0,0,0,0.12)"
+            bg = "rgba(255,255,255,0.06)" if dark else "rgba(0,0,0,0.04)"
+            border = "rgba(128,128,128,0.25)" if dark else "rgba(0,0,0,0.18)"
         card.setStyleSheet(
             f"QFrame#wizardModeCard {{"
             f"  background: {bg}; border: 1px solid {border}; border-radius: 6px;"
