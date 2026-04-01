@@ -96,7 +96,7 @@ class WizardInterface(QtWidgets.QWidget):
 
         # Wizard state
         self._mode              = None
-        self._template          = None
+        self._templates         = []
         self._custom_records    = []
         self._variables         = {}
         self._selected_domains  = []
@@ -231,7 +231,7 @@ class WizardInterface(QtWidgets.QWidget):
     def _reset(self):
         """Reset all wizard state and return to step 0."""
         self._mode              = None
-        self._template          = None
+        self._templates         = []
         self._custom_records    = []
         self._variables         = {}
         self._selected_domains  = []
@@ -279,9 +279,15 @@ class WizardInterface(QtWidgets.QWidget):
             self._var_form_layout.removeRow(0)
         self._var_inputs.clear()
 
-        if self._mode == "preset" and self._template:
-            tpl_vars = self._template.get("variables", {})
-            records = self._template.get("records", [])
+        if self._mode == "preset" and self._templates:
+            # Merge variables and records from all selected templates
+            tpl_vars = {}
+            records = []
+            for tpl in self._templates:
+                for k, v in tpl.get("variables", {}).items():
+                    if k not in tpl_vars:
+                        tpl_vars[k] = v
+                records.extend(tpl.get("records", []))
         else:
             tpl_vars = {}
             records = self._custom_records
@@ -468,7 +474,7 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _validate_template_step(self) -> bool:
         if self._mode == "preset":
-            return self._template is not None
+            return len(self._templates) > 0
         else:
             records = self._read_custom_records()
             self._custom_records = records
@@ -476,10 +482,12 @@ class WizardInterface(QtWidgets.QWidget):
 
     def _validate_variables_step(self) -> bool:
         """Check all required variables have values."""
-        if self._mode == "preset" and self._template:
-            tpl_vars = self._template.get("variables", {})
-        else:
-            tpl_vars = {}
+        tpl_vars = {}
+        if self._mode == "preset" and self._templates:
+            for tpl in self._templates:
+                for k, v in tpl.get("variables", {}).items():
+                    if k not in tpl_vars:
+                        tpl_vars[k] = v
 
         for var_name, edit in self._var_inputs.items():
             if var_name == "subdomain_prefix":
@@ -512,8 +520,10 @@ class WizardInterface(QtWidgets.QWidget):
         variables = self._collect_variables()
         prefix = variables.pop("subdomain_prefix", "").strip()
 
-        if self._mode == "preset" and self._template:
-            records = self._template["records"]
+        if self._mode == "preset" and self._templates:
+            records = []
+            for tpl in self._templates:
+                records.extend(tpl["records"])
         else:
             records = self._custom_records
 
@@ -635,31 +645,43 @@ class WizardInterface(QtWidgets.QWidget):
         if last_header is not None:
             last_header.setHidden(not last_header_has_children)
 
-    def _on_template_selected(self, current, _previous):
-        if current is None:
-            self._template = None
-            self._validate_current_step()
-            return
-        tpl_id = current.data(Qt.ItemDataRole.UserRole)
-        if tpl_id is None:
-            self._template = None
-            self._validate_current_step()
-            return
-        tpl = next((t for t in TEMPLATES if t["id"] == tpl_id), None)
-        self._template = tpl
-        if tpl:
-            self._template_name_label.setText(tpl["name"])
-            self._template_desc_label.setText(tpl["description"])
-            self._template_records_table.setRowCount(len(tpl["records"]))
-            for r, rec in enumerate(tpl["records"]):
-                self._template_records_table.setItem(
-                    r, 0, QtWidgets.QTableWidgetItem(rec["type"]))
-                self._template_records_table.setItem(
-                    r, 1, QtWidgets.QTableWidgetItem(rec["subname"] or "@"))
-                self._template_records_table.setItem(
-                    r, 2, QtWidgets.QTableWidgetItem(str(rec["ttl"])))
-                self._template_records_table.setItem(
-                    r, 3, QtWidgets.QTableWidgetItem(rec["content"]))
+    def _on_template_selected(self):
+        selected = []
+        for item in self._template_list.selectedItems():
+            tpl_id = item.data(Qt.ItemDataRole.UserRole)
+            if tpl_id is None:
+                continue
+            tpl = next((t for t in TEMPLATES if t["id"] == tpl_id), None)
+            if tpl:
+                selected.append(tpl)
+        self._templates = selected
+
+        # Preview: combined records from all selected templates
+        all_records = []
+        for tpl in selected:
+            all_records.extend(tpl["records"])
+
+        if selected:
+            self._template_name_label.setText(
+                f"{len(selected)} template{'s' if len(selected) != 1 else ''} selected"
+            )
+            self._template_desc_label.setText(
+                ", ".join(t["name"] for t in selected)
+            )
+        else:
+            self._template_name_label.setText("")
+            self._template_desc_label.setText("")
+
+        self._template_records_table.setRowCount(len(all_records))
+        for r, rec in enumerate(all_records):
+            self._template_records_table.setItem(
+                r, 0, QtWidgets.QTableWidgetItem(rec["type"]))
+            self._template_records_table.setItem(
+                r, 1, QtWidgets.QTableWidgetItem(rec["subname"] or "@"))
+            self._template_records_table.setItem(
+                r, 2, QtWidgets.QTableWidgetItem(str(rec["ttl"])))
+            self._template_records_table.setItem(
+                r, 3, QtWidgets.QTableWidgetItem(rec["content"]))
         self._validate_current_step()
 
     def _build_custom_builder(self):
@@ -1026,9 +1048,12 @@ class WizardInterface(QtWidgets.QWidget):
         splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
 
-        # Template list
+        # Template list (multi-select)
         self._template_list = ListWidget()
-        self._template_list.currentItemChanged.connect(self._on_template_selected)
+        self._template_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.MultiSelection
+        )
+        self._template_list.itemSelectionChanged.connect(self._on_template_selected)
         splitter.addWidget(self._template_list)
 
         # Preview panel
