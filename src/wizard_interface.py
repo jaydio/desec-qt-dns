@@ -353,7 +353,50 @@ class WizardInterface(QtWidgets.QWidget):
         self._validate_current_step()
 
     def _on_enter_domains_step(self):
-        pass
+        """Rebuild the checkbox list from cached zones."""
+        while self._domain_check_layout.count() > 1:
+            item = self._domain_check_layout.takeAt(0)
+            if w := item.widget():
+                w.deleteLater()
+        self._domain_checkboxes.clear()
+
+        cached, _ = self._cache.get_cached_zones()
+        zones = sorted(z.get("name", "") for z in (cached or []))
+
+        for name in zones:
+            cb = CheckBox(name)
+            cb.stateChanged.connect(self._on_domain_check_changed)
+            self._domain_check_layout.insertWidget(
+                self._domain_check_layout.count() - 1, cb
+            )
+            self._domain_checkboxes.append((name, cb))
+
+        self._domain_search.clear()
+        self._update_domain_count()
+
+    def _filter_domain_checkboxes(self, text):
+        ft = text.strip().lower()
+        for name, cb in self._domain_checkboxes:
+            cb.setVisible(not ft or ft in name.lower())
+
+    def _set_all_domains(self, checked):
+        for name, cb in self._domain_checkboxes:
+            if cb.isVisible():
+                cb.setChecked(checked)
+
+    def _on_domain_check_changed(self):
+        self._selected_domains = [
+            name for name, cb in self._domain_checkboxes if cb.isChecked()
+        ]
+        self._update_domain_count()
+        self._validate_current_step()
+
+    def _update_domain_count(self):
+        total = len(self._domain_checkboxes)
+        selected = len([1 for _, cb in self._domain_checkboxes if cb.isChecked()])
+        self._domain_count_label.setText(
+            f"{selected} of {total} domain{'s' if total != 1 else ''} selected"
+        )
 
     def _on_enter_preview_step(self):
         pass
@@ -761,11 +804,54 @@ class WizardInterface(QtWidgets.QWidget):
 
         return w
 
-    def _build_step_domains(self) -> QtWidgets.QWidget:
+    def _build_step_domains(self):
         w = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addWidget(CaptionLabel("Step placeholder: Select Domains"))
-        layout.addStretch()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+
+        lay.addWidget(StrongBodyLabel("Select Target Domains"))
+        lay.addWidget(CaptionLabel(
+            "Records will be created on all selected domains."
+        ))
+
+        toolbar = QtWidgets.QHBoxLayout()
+        toolbar.setSpacing(8)
+
+        self._domain_search = SearchLineEdit()
+        self._domain_search.setPlaceholderText("Filter domains...")
+        self._domain_search.textChanged.connect(self._filter_domain_checkboxes)
+        toolbar.addWidget(self._domain_search, 1)
+
+        btn_all = PushButton("Select All")
+        btn_all.clicked.connect(lambda: self._set_all_domains(True))
+        toolbar.addWidget(btn_all)
+
+        btn_none = PushButton("Deselect All")
+        btn_none.clicked.connect(lambda: self._set_all_domains(False))
+        toolbar.addWidget(btn_none)
+
+        lay.addLayout(toolbar)
+
+        self._domain_count_label = CaptionLabel("0 of 0 domains selected")
+        lay.addWidget(self._domain_count_label)
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+        self._domain_check_widget = QtWidgets.QWidget()
+        self._domain_check_layout = QtWidgets.QVBoxLayout(self._domain_check_widget)
+        self._domain_check_layout.setContentsMargins(0, 0, 0, 0)
+        self._domain_check_layout.setSpacing(4)
+        self._domain_check_layout.addStretch()
+        scroll.setWidget(self._domain_check_widget)
+        lay.addWidget(scroll, 1)
+
+        self._domain_checkboxes = []
         return w
 
     def _build_step_conflict(self) -> QtWidgets.QWidget:
