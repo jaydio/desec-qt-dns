@@ -74,9 +74,6 @@ class WizardInterface(QtWidgets.QWidget):
     ]
 
     _TTL_OPTIONS = [
-        ("60", "1 min"),
-        ("300", "5 min"),
-        ("900", "15 min"),
         ("3600", "1 hour"),
         ("21600", "6 hours"),
         ("43200", "12 hours"),
@@ -757,7 +754,7 @@ class WizardInterface(QtWidgets.QWidget):
         self._custom_table = TableWidget()
         self._custom_table.setColumnCount(4)
         self._custom_table.setHorizontalHeaderLabels(
-            ["Type", "Subdomain", "TTL", "Content"]
+            ["Type", "Name", "TTL", "Content"]
         )
         self._custom_table.verticalHeader().setVisible(False)
         self._custom_table.horizontalHeader().setSectionResizeMode(
@@ -806,7 +803,7 @@ class WizardInterface(QtWidgets.QWidget):
         ttl_combo = ComboBox()
         for val, label in self._TTL_OPTIONS:
             ttl_combo.addItem(f"{label} ({val}s)")
-        ttl_combo.setCurrentIndex(3)  # default 1 hour
+        ttl_combo.setCurrentIndex(0)  # default 1 hour
         self._custom_table.setCellWidget(row, 2, ttl_combo)
 
         content_edit = LineEdit()
@@ -1128,7 +1125,7 @@ class WizardInterface(QtWidgets.QWidget):
         self._template_records_table = TableWidget()
         self._template_records_table.setColumnCount(4)
         self._template_records_table.setHorizontalHeaderLabels(
-            ["Type", "Subdomain", "TTL", "Content"]
+            ["Type", "Name", "TTL", "Content"]
         )
         self._template_records_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
@@ -1318,7 +1315,7 @@ class WizardInterface(QtWidgets.QWidget):
         self._preview_table = TableWidget()
         self._preview_table.setColumnCount(6)
         self._preview_table.setHorizontalHeaderLabels(
-            ["Domain", "Subdomain", "Type", "TTL", "Content", "Status"]
+            ["Domain", "Name", "Type", "TTL", "Content", "Status"]
         )
         self._preview_table.verticalHeader().setVisible(False)
         self._preview_table.setEditTriggers(
@@ -1362,7 +1359,7 @@ class WizardInterface(QtWidgets.QWidget):
         self._exec_table = TableWidget()
         self._exec_table.setColumnCount(5)
         self._exec_table.setHorizontalHeaderLabels(
-            ["Domain", "Subdomain", "Type", "Content", "Result"]
+            ["Domain", "Name", "Type", "Content", "Result"]
         )
         self._exec_table.verticalHeader().setVisible(False)
         self._exec_table.setEditTriggers(
