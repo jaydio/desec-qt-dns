@@ -854,12 +854,54 @@ class WizardInterface(QtWidgets.QWidget):
         self._domain_checkboxes = []
         return w
 
-    def _build_step_conflict(self) -> QtWidgets.QWidget:
+    def _build_step_conflict(self):
         w = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addWidget(CaptionLabel("Step placeholder: Conflict Strategy"))
-        layout.addStretch()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(12)
+
+        lay.addWidget(StrongBodyLabel("Conflict Strategy"))
+        lay.addWidget(CaptionLabel(
+            "Choose how to handle cases where a record with the same "
+            "subdomain and type already exists on a target domain."
+        ))
+
+        self._conflict_radios = {}
+
+        r_merge = RadioButton("Merge")
+        r_merge.setChecked(True)
+        self._conflict_strategy = "merge"
+        r_merge.toggled.connect(lambda checked: self._set_conflict("merge") if checked else None)
+        lay.addWidget(r_merge)
+        lay.addWidget(CaptionLabel(
+            "  Append new content to the existing record set. "
+            "For example, adds a new MX record alongside existing ones."
+        ))
+        self._conflict_radios["merge"] = r_merge
+
+        r_replace = RadioButton("Replace")
+        r_replace.toggled.connect(lambda checked: self._set_conflict("replace") if checked else None)
+        lay.addWidget(r_replace)
+        lay.addWidget(CaptionLabel(
+            "  Overwrite the existing record set entirely with the new content. "
+            "Use with caution — existing records of the same type will be lost."
+        ))
+        self._conflict_radios["replace"] = r_replace
+
+        r_skip = RadioButton("Skip")
+        r_skip.toggled.connect(lambda checked: self._set_conflict("skip") if checked else None)
+        lay.addWidget(r_skip)
+        lay.addWidget(CaptionLabel(
+            "  Leave existing records untouched. Only create records where "
+            "no matching subdomain + type combination exists yet."
+        ))
+        self._conflict_radios["skip"] = r_skip
+
+        lay.addStretch()
         return w
+
+    def _set_conflict(self, strategy):
+        self._conflict_strategy = strategy
 
     def _build_step_preview(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
