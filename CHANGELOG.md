@@ -5,6 +5,12 @@ All notable changes to the deSEC Qt DNS Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1-beta] - 2026-04-02
+
+### Added in 1.2.1-beta
+
+- **Export zone search filter** — SearchLineEdit at the top of the Export zone list for quick filtering, matching the DNS zone list pattern
+
 ## [1.2.0-beta] - 2026-04-02
 
 ### Added in 1.2.0-beta
