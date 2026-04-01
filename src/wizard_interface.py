@@ -1048,7 +1048,7 @@ class WizardInterface(QtWidgets.QWidget):
             border = "rgba(0,120,212,0.6)" if dark else "rgba(0,120,212,0.5)"
         else:
             bg = "rgba(255,255,255,0.06)" if dark else "rgba(0,0,0,0.04)"
-            border = "rgba(128,128,128,0.25)" if dark else "rgba(0,0,0,0.18)"
+            border = "rgba(128,128,128,0.35)" if dark else "rgba(0,0,0,0.20)"
         card.setStyleSheet(
             f"QFrame#wizardModeCard {{"
             f"  background: {bg}; border: 1px solid {border}; border-radius: 6px;"
@@ -1375,3 +1375,6 @@ class WizardInterface(QtWidgets.QWidget):
     def showEvent(self, event):  # noqa: N802
         super().showEvent(event)
         self.setStyleSheet(container_qss())
+        # Re-apply card styles after container_qss() to prevent override
+        self._style_mode_card(self._card_preset, self._mode == "preset")
+        self._style_mode_card(self._card_custom, self._mode == "custom")
