@@ -490,7 +490,36 @@ class WizardInterface(QtWidgets.QWidget):
         else:
             records = self._read_custom_records()
             self._custom_records = records
-            return len(records) > 0
+            if not records:
+                return False
+            # Validate each record inline (skip if content has {variables})
+            all_valid = True
+            for row in range(self._custom_table.rowCount()):
+                type_combo = self._custom_table.cellWidget(row, 0)
+                content_edit = self._custom_table.cellWidget(row, 3)
+                if not type_combo or not content_edit:
+                    continue
+                content = content_edit.text().strip()
+                if not content:
+                    continue
+                # Skip validation for unresolved variables
+                if re.search(r'\{\w+\}', content):
+                    content_edit.setStyleSheet("")
+                    content_edit.setToolTip("")
+                    continue
+                is_valid, err = _validate_record_content(
+                    type_combo.currentText(), content
+                )
+                if not is_valid:
+                    content_edit.setStyleSheet(
+                        "LineEdit { border: 1px solid #E53935; }"
+                    )
+                    content_edit.setToolTip(err)
+                    all_valid = False
+                else:
+                    content_edit.setStyleSheet("")
+                    content_edit.setToolTip("")
+            return all_valid
 
     def _validate_variables_step(self) -> bool:
         """Check all required variables have values."""
@@ -774,6 +803,9 @@ class WizardInterface(QtWidgets.QWidget):
         for t in self._RECORD_TYPES:
             type_combo.addItem(t)
         type_combo.setCurrentIndex(0)
+        type_combo.currentIndexChanged.connect(
+            lambda: self._validate_current_step()
+        )
         self._custom_table.setCellWidget(row, 0, type_combo)
 
         sub_edit = LineEdit()
