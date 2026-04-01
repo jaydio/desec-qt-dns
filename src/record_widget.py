@@ -918,7 +918,22 @@ class RecordWidget(QtWidgets.QWidget):
         
         # Add header layout to main layout
         layout.addLayout(header_layout)
-        
+
+        # Queue progress bar (hidden by default, shown during active operations)
+        self._queue_progress_row = QtWidgets.QWidget()
+        qp_lay = QtWidgets.QHBoxLayout(self._queue_progress_row)
+        qp_lay.setContentsMargins(0, 4, 0, 4)
+        qp_lay.setSpacing(8)
+        self._queue_progress = ProgressBar()
+        qp_lay.addWidget(self._queue_progress, 1)
+        self._queue_status = CaptionLabel("")
+        qp_lay.addWidget(self._queue_status)
+        self._queue_progress_row.setVisible(False)
+        layout.addWidget(self._queue_progress_row)
+
+        self._pending_ops = 0
+        self._completed_ops = 0
+
         # Records table
         self.records_table = TableWidget()
         self.records_table.setColumnCount(4)  # Name, Type, TTL, Content
@@ -984,21 +999,6 @@ class RecordWidget(QtWidgets.QWidget):
         button_spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum,
                                           QtWidgets.QSizePolicy.Policy.Expanding)
         layout.addItem(button_spacer)
-
-        # Queue progress bar (hidden by default, shown during active operations)
-        self._queue_progress_row = QtWidgets.QWidget()
-        qp_lay = QtWidgets.QHBoxLayout(self._queue_progress_row)
-        qp_lay.setContentsMargins(0, 4, 0, 4)
-        qp_lay.setSpacing(8)
-        self._queue_progress = ProgressBar()
-        qp_lay.addWidget(self._queue_progress, 1)
-        self._queue_status = CaptionLabel("")
-        qp_lay.addWidget(self._queue_status)
-        self._queue_progress_row.setVisible(False)
-        layout.addWidget(self._queue_progress_row)
-
-        self._pending_ops = 0
-        self._completed_ops = 0
 
         # Action buttons
         actions_layout = QtWidgets.QHBoxLayout()
